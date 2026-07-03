@@ -1,0 +1,106 @@
+name: hermes-compose-mcp
+
+services:
+  hermes:
+    image: ${HERMES_IMAGE:-nousresearch/hermes-agent:latest}
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      hindsight-mcp:
+        condition: service_healthy
+      headroom-proxy:
+        condition: service_healthy
+    volumes:
+      - ./hermes-data:/opt/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      HERMES_UID: ${HERMES_UID:-10000}
+      HERMES_GID: ${HERMES_GID:-10000}
+    command: ["gateway", "run"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  hermes-dashboard:
+    image: ${HERMES_IMAGE:-nousresearch/hermes-agent:latest}
+    restart: unless-stopped
+    network_mode: host
+    profiles:
+      - dashboard
+    depends_on:
+      - hermes
+    volumes:
+      - ./hermes-data:/opt/data
+    environment:
+      HERMES_UID: ${HERMES_UID:-10000}
+      HERMES_GID: ${HERMES_GID:-10000}
+    command: ["dashboard", "--host", "127.0.0.1", "--no-open"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  hindsight-mcp:
+    image: ${HINDSIGHT_IMAGE:-ghcr.io/vectorize-io/hindsight:latest}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${HINDSIGHT_API_HOST_PORT:-8888}:8888"
+      - "127.0.0.1:${HINDSIGHT_UI_HOST_PORT:-9999}:9999"
+    environment:
+      HINDSIGHT_API_HOST: 0.0.0.0
+      HINDSIGHT_API_PORT: 8888
+      HINDSIGHT_API_LLM_PROVIDER: ${HINDSIGHT_API_LLM_PROVIDER:-openai}
+      HINDSIGHT_API_LLM_MODEL: ${HINDSIGHT_API_LLM_MODEL:-gpt-4o-mini}
+      HINDSIGHT_API_LLM_API_KEY: ${HINDSIGHT_API_LLM_API_KEY:-}
+      HINDSIGHT_API_LLM_BASE_URL: ${HINDSIGHT_API_LLM_BASE_URL:-}
+      HINDSIGHT_API_LOG_LEVEL: ${HINDSIGHT_API_LOG_LEVEL:-info}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - hindsight-mcp-data:/home/hindsight/.pg0
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8888/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  headroom-proxy:
+    image: ${HEADROOM_IMAGE:-ghcr.io/chopratejas/headroom:latest}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${HEADROOM_PROXY_HOST_PORT:-8787}:8787"
+    environment:
+      HEADROOM_HOST: 0.0.0.0
+      HEADROOM_TELEMETRY: ${HEADROOM_TELEMETRY:-off}
+      OPENAI_TARGET_API_URL: ${OPENAI_TARGET_API_URL:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["--host", "0.0.0.0", "--port", "8787"]
+    volumes:
+      - headroom-workspace-data:/home/nonroot/.headroom
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8787/readyz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  hindsight-mcp-data:
+    name: hermes-hindsight-data
+  headroom-workspace-data:
+    name: hermes-headroom-workspace

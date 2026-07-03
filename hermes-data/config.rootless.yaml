@@ -1,0 +1,31 @@
+# Minimal Hermes config for the compose-managed rootless deployment.
+#
+# In rootless mode Hermes runs on the Compose bridge network, so MCP URLs use
+# Compose service names instead of 127.0.0.1.
+
+mcp_servers:
+  hindsight:
+    url: "http://hindsight-mcp:8888/mcp/hermes-default/"
+    enabled: true
+    connect_timeout: 10
+    timeout: 120
+
+  headroom:
+    command: "docker"
+    args:
+      - "run"
+      - "--rm"
+      - "-i"
+      - "--network"
+      - "hermes-compose-mcp-rootless"
+      - "--entrypoint"
+      - "headroom"
+      - "-e"
+      - "HEADROOM_PROXY_URL=http://headroom-proxy:8787"
+      - "-v"
+      - "hermes-headroom-workspace:/home/nonroot/.headroom"
+      - "ghcr.io/chopratejas/headroom:latest"
+      - "mcp"
+      - "serve"
+    enabled: true
+    timeout: 120

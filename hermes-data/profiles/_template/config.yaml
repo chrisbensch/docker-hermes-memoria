@@ -1,0 +1,40 @@
+# Profile-local Hermes config template.
+#
+# scripts/create-profile.sh replaces:
+#   __PROFILE__ with the Hermes profile name
+#   __BANK_ID__ with the Hindsight bank ID, default hermes-<profile>
+
+mcp_servers:
+  hindsight:
+    url: "http://127.0.0.1:8888/mcp/__BANK_ID__/"
+    enabled: true
+    connect_timeout: 10
+    timeout: 120
+
+  # Optional admin endpoint. Enable temporarily only when you need multi-bank
+  # management tools such as list_banks or create_bank.
+  # hindsight_admin:
+  #   url: "http://127.0.0.1:8888/mcp/"
+  #   enabled: false
+  #   connect_timeout: 10
+  #   timeout: 120
+
+  headroom:
+    command: "docker"
+    args:
+      - "run"
+      - "--rm"
+      - "-i"
+      - "--network"
+      - "host"
+      - "--entrypoint"
+      - "headroom"
+      - "-e"
+      - "HEADROOM_PROXY_URL=http://127.0.0.1:8787"
+      - "-v"
+      - "hermes-headroom-workspace:/home/nonroot/.headroom"
+      - "ghcr.io/chopratejas/headroom:latest"
+      - "mcp"
+      - "serve"
+    enabled: true
+    timeout: 120

@@ -1,0 +1,10 @@
+.env
+hermes-data/.env
+hermes-data/logs/
+hermes-data/sessions/
+hermes-data/cache/
+hermes-data/lazy-packages/
+hermes-data/profiles/*/.env
+hermes-data/profiles/*/state.db
+hermes-data/profiles/*/sessions/
+hermes-data/profiles/*/cache/
