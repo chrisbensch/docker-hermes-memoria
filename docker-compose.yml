@@ -10,12 +10,20 @@ services:
         condition: service_healthy
       headroom-proxy:
         condition: service_healthy
+      firecrawl-api:
+        condition: service_started
     volumes:
       - ./hermes-data:/opt/data
-      - /var/run/docker.sock:/var/run/docker.sock
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        bind:
+          create_host_path: false
     environment:
       HERMES_UID: ${HERMES_UID:-10000}
       HERMES_GID: ${HERMES_GID:-10000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: ["gateway", "run"]
     logging:
       driver: json-file
@@ -36,6 +44,8 @@ services:
     environment:
       HERMES_UID: ${HERMES_UID:-10000}
       HERMES_GID: ${HERMES_GID:-10000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: ["dashboard", "--host", "127.0.0.1", "--no-open"]
     logging:
       driver: json-file
@@ -47,8 +57,8 @@ services:
     image: ${HINDSIGHT_IMAGE:-ghcr.io/vectorize-io/hindsight:latest}
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${HINDSIGHT_API_HOST_PORT:-8888}:8888"
-      - "127.0.0.1:${HINDSIGHT_UI_HOST_PORT:-9999}:9999"
+      - "${HINDSIGHT_API_BIND_HOST:-127.0.0.1}:${HINDSIGHT_API_HOST_PORT:-8888}:8888"
+      - "${HINDSIGHT_UI_BIND_HOST:-127.0.0.1}:${HINDSIGHT_UI_HOST_PORT:-9999}:9999"
     environment:
       HINDSIGHT_API_HOST: 0.0.0.0
       HINDSIGHT_API_PORT: 8888
@@ -77,7 +87,7 @@ services:
     image: ${HEADROOM_IMAGE:-ghcr.io/chopratejas/headroom:latest}
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${HEADROOM_PROXY_HOST_PORT:-8787}:8787"
+      - "${HEADROOM_PROXY_BIND_HOST:-127.0.0.1}:${HEADROOM_PROXY_HOST_PORT:-8787}:8787"
     environment:
       HEADROOM_HOST: 0.0.0.0
       HEADROOM_TELEMETRY: ${HEADROOM_TELEMETRY:-off}
@@ -99,8 +109,174 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  firecrawl-api:
+    image: ${FIRECRAWL_IMAGE:-ghcr.io/firecrawl/firecrawl:latest}
+    restart: unless-stopped
+    ports:
+      - "${FIRECRAWL_BIND_HOST:-127.0.0.1}:${FIRECRAWL_HOST_PORT:-3002}:3002"
+    depends_on:
+      firecrawl-redis:
+        condition: service_healthy
+      firecrawl-playwright:
+        condition: service_started
+      firecrawl-rabbitmq:
+        condition: service_healthy
+      firecrawl-nuq-postgres:
+        condition: service_healthy
+      searxng:
+        condition: service_started
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3002
+      USE_DB_AUTHENTICATION: ${FIRECRAWL_USE_DB_AUTHENTICATION:-false}
+      REDIS_URL: redis://firecrawl-redis:6379
+      REDIS_RATE_LIMIT_URL: redis://firecrawl-redis:6379
+      PLAYWRIGHT_MICROSERVICE_URL: http://firecrawl-playwright:3000/scrape
+      POSTGRES_USER: ${FIRECRAWL_POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${FIRECRAWL_POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${FIRECRAWL_POSTGRES_DB:-postgres}
+      POSTGRES_HOST: firecrawl-nuq-postgres
+      POSTGRES_PORT: 5432
+      NUQ_RABBITMQ_URL: amqp://firecrawl-rabbitmq:5672
+      BULL_AUTH_KEY: ${FIRECRAWL_BULL_AUTH_KEY:-}
+      SEARXNG_ENDPOINT: http://searxng:80
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  firecrawl-playwright:
+    image: ${FIRECRAWL_PLAYWRIGHT_IMAGE:-ghcr.io/firecrawl/playwright-service:latest}
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  firecrawl-redis:
+    image: ${FIRECRAWL_REDIS_IMAGE:-redis:alpine}
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - firecrawl-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  firecrawl-rabbitmq:
+    image: ${FIRECRAWL_RABBITMQ_IMAGE:-rabbitmq:3-management}
+    restart: unless-stopped
+    volumes:
+      - firecrawl-rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  firecrawl-nuq-postgres:
+    build:
+      context: ${FIRECRAWL_SOURCE_DIR:-./.firecrawl-src}/apps/nuq-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${FIRECRAWL_POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${FIRECRAWL_POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${FIRECRAWL_POSTGRES_DB:-postgres}
+    volumes:
+      - firecrawl-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  searxng-core:
+    image: ${SEARXNG_IMAGE:-searxng/searxng:latest}
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: ${SEARXNG_SETTINGS_FILE:-./web-search/searxng-settings.yml}
+        target: /etc/searxng/settings.yml
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./web-search/searxng-limiter.toml
+        target: /etc/searxng/limiter.toml
+        read_only: true
+        bind:
+          create_host_path: false
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  searxng:
+    image: ${SEARXNG_NGINX_IMAGE:-nginx:alpine}
+    restart: unless-stopped
+    ports:
+      - "${SEARXNG_BIND_HOST:-127.0.0.1}:${SEARXNG_HOST_PORT:-8889}:80"
+    volumes:
+      - type: bind
+        source: ./web-search/nginx.conf
+        target: /etc/nginx/conf.d/default.conf
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      searxng-core:
+        condition: service_started
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  camofox:
+    image: ${CAMOFOX_IMAGE:-ghcr.io/jo-inc/camofox-browser:latest}
+    restart: unless-stopped
+    ports:
+      - "${CAMOFOX_BIND_HOST:-127.0.0.1}:${CAMOFOX_HOST_PORT:-9377}:9377"
+    environment:
+      CAMOFOX_PORT: 9377
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
 volumes:
   hindsight-mcp-data:
     name: hermes-hindsight-data
   headroom-workspace-data:
     name: hermes-headroom-workspace
+  firecrawl-redis-data:
+    name: hermes-firecrawl-redis
+  firecrawl-rabbitmq-data:
+    name: hermes-firecrawl-rabbitmq
+  firecrawl-postgres-data:
+    name: hermes-firecrawl-postgres

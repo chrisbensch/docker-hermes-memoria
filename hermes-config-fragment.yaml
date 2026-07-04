@@ -1,3 +1,10 @@
+web:
+  extract_backend: firecrawl
+  search_backend: firecrawl
+
+browser:
+  backend: camofox
+
 mcp_servers:
   hindsight:
     url: "http://127.0.0.1:8888/mcp/hermes-__PROFILE__/"

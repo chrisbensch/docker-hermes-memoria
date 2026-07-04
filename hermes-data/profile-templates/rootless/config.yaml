@@ -4,6 +4,20 @@
 #   __PROFILE__ with the Hermes profile name
 #   __BANK_ID__ with the Hindsight bank ID, default hermes-<profile>
 
+# Optional Hermes runtime model. Hindsight has separate HINDSIGHT_API_LLM_*
+# settings in the Compose .env file; this block controls Hermes Agent itself.
+# model:
+#   provider: lmstudio
+#   default: your-local-model
+#   base_url: http://host.docker.internal:1234/v1
+
+web:
+  extract_backend: firecrawl
+  search_backend: firecrawl
+
+browser:
+  backend: camofox
+
 mcp_servers:
   hindsight:
     url: "http://hindsight-mcp:8888/mcp/__BANK_ID__/"

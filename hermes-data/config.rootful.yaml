@@ -1,15 +1,15 @@
-# Minimal base Hermes config for the compose-managed rootless deployment.
+# Minimal base Hermes config for the compose-managed rootful deployment.
 #
-# In rootless mode Hermes runs on the Compose bridge network, so MCP URLs use
-# Compose service names instead of 127.0.0.1. Profile-specific MCP wiring is
-# generated under hermes-data/profiles/<name>/ by create-profile-rootless.sh.
+# Copy this file to hermes-data/config.yaml when using docker-compose.yml
+# without the rootless override. Profile-specific MCP wiring is generated under
+# hermes-data/profiles/<name>/ by create-profile.sh.
 
 # Optional Hermes runtime model. Hindsight has separate HINDSIGHT_API_LLM_*
 # settings in the Compose .env file; this block controls Hermes Agent itself.
 # model:
 #   provider: lmstudio
 #   default: your-local-model
-#   base_url: http://host.docker.internal:1234/v1
+#   base_url: http://127.0.0.1:1234/v1
 
 # Keep the base profile blank. The quickstart-created profile becomes active
 # through hermes-data/active_profile and owns its Hindsight/Headroom config.
