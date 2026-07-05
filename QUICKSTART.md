@@ -62,6 +62,9 @@ chmod +x scripts/create-profile.sh scripts/create-profile-rootless.sh
 ./scripts/create-profile-rootless.sh research
 ```
 
+If Hindsight is already running, the script also creates the matching bank. If
+not, it prints the curl command to retry after startup.
+
 Hindsight and Hermes use separate model settings. To run Hermes Agent itself
 through LM Studio, set `LM_BASE_URL` in `appdata/hermes/.env`, then add a runtime
 model block to `appdata/hermes/profiles/research/config.yaml`:
@@ -90,7 +93,8 @@ docker compose --env-file .env exec hermes hermes profile list
 docker compose --env-file .env exec hermes hermes status
 ```
 
-4. Check services and initialize the Hindsight bank:
+4. Check services and initialize the Hindsight bank if the profile script
+reported that bank creation was skipped:
 
 ```bash
 curl -fsS http://127.0.0.1:8888/health
@@ -183,6 +187,9 @@ so the first container start runs that profile; do not create a profile named
 chmod +x scripts/create-profile.sh scripts/create-profile-rootless.sh
 ./scripts/create-profile.sh research
 ```
+
+If Hindsight is already running, the script also creates the matching bank. If
+not, it prints the curl command to retry after startup.
 
 If Hermes Agent itself should use LM Studio, set `LM_BASE_URL` in
 `appdata/hermes/.env`, then add the runtime model block to

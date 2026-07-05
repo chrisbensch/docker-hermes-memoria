@@ -14,8 +14,9 @@ retrieval of compressed content, and compression statistics.
 
 ## Hindsight Bank
 
-The profile config pins Hindsight to `__BANK_ID__` by URL. From the Ubuntu host,
-create or inspect the bank through the loopback-published API:
+The profile config pins Hindsight to `__BANK_ID__` by URL. The profile creation
+script creates this bank automatically when the Hindsight API is reachable. To
+retry manually from the Ubuntu host, call the loopback-published API:
 
 ```bash
 curl -fsS -X PUT "http://127.0.0.1:8888/v1/default/banks/__BANK_ID__" \

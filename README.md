@@ -98,6 +98,12 @@ from mixing unless you deliberately enable the commented multi-bank admin
 endpoint. In rootful host-network mode, the equivalent URL is
 `http://127.0.0.1:8888/mcp/hermes-research/`.
 
+The profile creation scripts create the matching Hindsight bank through
+`http://127.0.0.1:8888` when the Hindsight API is reachable. Set
+`HERMES_CREATE_HINDSIGHT_BANK=0` to skip that step, or
+`HERMES_REQUIRE_HINDSIGHT_BANK=1` to make an unreachable Hindsight API fail the
+profile creation.
+
 Compose service names are the stable names to use for internal addressing. Do
 not depend on generated container names or container IP addresses. In the
 default rootless mode, use service names such as `hindsight-mcp`,
@@ -211,6 +217,10 @@ bank name is `hermes-<profile>` and Headroom MCP is included automatically:
 ./scripts/create-profile-rootless.sh coder hermes-coder
 ```
 
+When Hindsight is already running, the script also creates each matching
+Hindsight bank. If Hindsight is not up yet, it prints the curl command to run
+after startup.
+
 Hindsight's `HINDSIGHT_API_LLM_*` values do not configure Hermes Agent's own
 chat model. To make Hermes use LM Studio, also set the runtime model in the
 active profile config, for example `appdata/hermes/profiles/research/config.yaml`:
@@ -247,7 +257,8 @@ curl -fsS "http://127.0.0.1:8889/search?q=test&format=json"
 curl -fsS http://127.0.0.1:9377/health
 ```
 
-10. Explicitly initialize each Hindsight bank. Hindsight can create banks on first use, but this makes a fresh server setup deterministic:
+10. If the profile script ran before Hindsight was up, initialize each Hindsight
+bank after startup:
 
 ```bash
 curl -fsS -X PUT "http://127.0.0.1:8888/v1/default/banks/hermes-research" \
@@ -255,7 +266,8 @@ curl -fsS -X PUT "http://127.0.0.1:8888/v1/default/banks/hermes-research" \
   -d '{}'
 ```
 
-Repeat that command for each bank, such as `hermes-coder`.
+Repeat that command for any bank the script reported as skipped, such as
+`hermes-coder`.
 
 The local dashboard service starts with the base stack and is published on host
 loopback at `http://127.0.0.1:${HERMES_DASHBOARD_HOST_PORT:-9119}`.
@@ -301,6 +313,10 @@ The scaffold writes `research` to `appdata/hermes/active_profile` and seeds gate
 state when no active profile exists yet, so the first gateway start uses the
 named profile instead of the base `default` profile.
 
+If Hindsight is already running, the scaffold also creates the matching bank
+through the host-published API. Otherwise it prints the curl command to retry
+after the stack is healthy.
+
 Rootless profile configs use:
 
 ```text
@@ -343,7 +359,8 @@ curl -fsS "http://127.0.0.1:8889/search?q=test&format=json"
 curl -fsS http://127.0.0.1:9377/health
 ```
 
-6. Initialize each Hindsight bank from the host:
+6. If bank creation was skipped because Hindsight was not running yet, initialize
+the bank from the host:
 
 ```bash
 curl -fsS -X PUT "http://127.0.0.1:8888/v1/default/banks/hermes-research" \

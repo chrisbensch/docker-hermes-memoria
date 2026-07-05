@@ -5,6 +5,7 @@ usage() {
   printf 'Usage: %s <profile-name> [hindsight-bank-id]\n' "$0" >&2
   printf 'Example: %s research hermes-research\n' "$0" >&2
   printf 'Default Hindsight bank ID: hermes-<profile-name>\n' >&2
+  printf 'Set HERMES_CREATE_HINDSIGHT_BANK=0 to skip bank creation.\n' >&2
 }
 
 if [ "${1:-}" = "" ]; then
@@ -56,6 +57,9 @@ case "$appdata_dir" in
   *) appdata_dir="$stack_dir/$appdata_dir" ;;
 esac
 hindsight_mcp_base=${HERMES_HINDSIGHT_MCP_BASE:-http://127.0.0.1:8888/mcp}
+hindsight_api_base=${HERMES_HINDSIGHT_API_BASE:-http://127.0.0.1:8888}
+init_hindsight_bank=${HERMES_CREATE_HINDSIGHT_BANK:-1}
+require_hindsight_bank=${HERMES_REQUIRE_HINDSIGHT_BANK:-0}
 headroom_mcp_description=${HERMES_HEADROOM_MCP_DESCRIPTION:-docker-backed stdio server using ghcr.io/chopratejas/headroom:0.27.0}
 activate_profile=${HERMES_PROFILE_ACTIVATE:-auto}
 
@@ -79,6 +83,43 @@ write_gateway_state() {
   timestamp=$(date +%s 2>/dev/null || printf '0')
   printf '{"gateway_state":"%s","desired_state":"%s","timestamp":%s,"kind":"hermes-gateway"}\n' \
     "$gateway_state" "$desired_state" "$timestamp" > "$state_file"
+}
+
+init_hindsight_bank() {
+  bank_url="$hindsight_api_base/v1/default/banks/$bank_id"
+  if ! command -v curl >/dev/null 2>&1; then
+    printf 'skipped; curl is not installed'
+    return 0
+  fi
+  if curl -fsS -X PUT "$bank_url" -H "content-type: application/json" -d '{}' >/dev/null 2>&1; then
+    printf 'ready'
+    return 0
+  fi
+  if [ "$require_hindsight_bank" = 1 ] || [ "$require_hindsight_bank" = true ] || [ "$require_hindsight_bank" = yes ]; then
+    printf 'Could not create Hindsight bank at %s\n' "$bank_url" >&2
+    printf 'Start Hindsight or set HERMES_HINDSIGHT_API_BASE to the reachable API URL.\n' >&2
+    exit 1
+  fi
+  printf 'skipped; Hindsight API unavailable at %s' "$hindsight_api_base"
+}
+
+print_summary() {
+  if [ "$init_hindsight_bank" = 0 ] || [ "$init_hindsight_bank" = false ] || [ "$init_hindsight_bank" = no ]; then
+    bank_message="skipped by HERMES_CREATE_HINDSIGHT_BANK=$init_hindsight_bank"
+  else
+    bank_message=$(init_hindsight_bank)
+  fi
+
+  printf '\nProfile: %s\n' "$profile_name"
+  printf 'Template: %s\n' "$template_name"
+  printf 'Active profile: %s\n' "$active_message"
+  printf 'Hindsight bank: %s (%s)\n' "$bank_id" "$bank_message"
+  printf 'Hindsight MCP URL: %s/%s/\n' "$hindsight_mcp_base" "$bank_id"
+  printf 'Headroom MCP: %s\n' "$headroom_mcp_description"
+  if printf '%s' "$bank_message" | grep -q '^skipped;'; then
+    printf 'Retry bank creation:\n'
+    printf '  curl -fsS -X PUT "%s/v1/default/banks/%s" -H "content-type: application/json" -d '\''{}'\''\n' "$hindsight_api_base" "$bank_id"
+  fi
 }
 
 activate_profile() {
@@ -172,12 +213,7 @@ create_profile_in_container() {
       ;;
   esac
 
-  printf '\nProfile: %s\n' "$profile_name"
-  printf 'Template: %s\n' "$template_name"
-  printf 'Active profile: %s\n' "$active_message"
-  printf 'Hindsight bank: %s\n' "$bank_id"
-  printf 'Hindsight MCP URL: %s/%s/\n' "$hindsight_mcp_base" "$bank_id"
-  printf 'Headroom MCP: %s\n' "$headroom_mcp_description"
+  print_summary
   exit 0
 }
 
@@ -236,9 +272,4 @@ case "$activate_profile" in
     ;;
 esac
 
-printf '\nProfile: %s\n' "$profile_name"
-printf 'Template: %s\n' "$template_name"
-printf 'Active profile: %s\n' "$active_message"
-printf 'Hindsight bank: %s\n' "$bank_id"
-printf 'Hindsight MCP URL: %s/%s/\n' "$hindsight_mcp_base" "$bank_id"
-printf 'Headroom MCP: %s\n' "$headroom_mcp_description"
+print_summary
