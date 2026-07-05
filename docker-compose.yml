@@ -8,12 +8,12 @@ services:
     depends_on:
       hindsight-mcp:
         condition: service_healthy
-      headroom-proxy:
-        condition: service_healthy
+      headroom-mcp:
+        condition: service_started
       firecrawl-api:
         condition: service_started
     volumes:
-      - ./hermes-data:/opt/data
+      - ${APPDATA_DIR:-./appdata}/hermes:/opt/data
       - type: bind
         source: /var/run/docker.sock
         target: /var/run/docker.sock
@@ -22,6 +22,7 @@ services:
     environment:
       HERMES_UID: ${HERMES_UID:-10000}
       HERMES_GID: ${HERMES_GID:-10000}
+      HERMES_HOME_MODE: ${HERMES_HOME_MODE:-0755}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     command: ["gateway", "run"]
@@ -40,10 +41,11 @@ services:
     depends_on:
       - hermes
     volumes:
-      - ./hermes-data:/opt/data
+      - ${APPDATA_DIR:-./appdata}/hermes:/opt/data
     environment:
       HERMES_UID: ${HERMES_UID:-10000}
       HERMES_GID: ${HERMES_GID:-10000}
+      HERMES_HOME_MODE: ${HERMES_HOME_MODE:-0755}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     command: ["dashboard", "--host", "127.0.0.1", "--no-open"]
@@ -67,10 +69,11 @@ services:
       HINDSIGHT_API_LLM_API_KEY: ${HINDSIGHT_API_LLM_API_KEY:-}
       HINDSIGHT_API_LLM_BASE_URL: ${HINDSIGHT_API_LLM_BASE_URL:-}
       HINDSIGHT_API_LOG_LEVEL: ${HINDSIGHT_API_LOG_LEVEL:-info}
+      HINDSIGHT_API_WORKER_ID: ${HINDSIGHT_API_WORKER_ID:-hindsight-mcp}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - hindsight-mcp-data:/home/hindsight/.pg0
+      - ${APPDATA_DIR:-./appdata}/hindsight:/home/hindsight/.pg0
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8888/health"]
       interval: 15s
@@ -84,8 +87,10 @@ services:
         max-file: "5"
 
   headroom-proxy:
-    image: ${HEADROOM_IMAGE:-ghcr.io/chopratejas/headroom:latest}
+    image: ${HEADROOM_IMAGE:-ghcr.io/chopratejas/headroom:0.27.0}
     restart: unless-stopped
+    profiles:
+      - headroom
     ports:
       - "${HEADROOM_PROXY_BIND_HOST:-127.0.0.1}:${HEADROOM_PROXY_HOST_PORT:-8787}:8787"
     environment:
@@ -96,13 +101,31 @@ services:
       - "host.docker.internal:host-gateway"
     command: ["--host", "0.0.0.0", "--port", "8787"]
     volumes:
-      - headroom-workspace-data:/home/nonroot/.headroom
+      - ${APPDATA_DIR:-./appdata}/headroom:/home/nonroot/.headroom
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8787/readyz"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  headroom-mcp:
+    image: ${HEADROOM_IMAGE:-ghcr.io/chopratejas/headroom:0.27.0}
+    container_name: hermes-headroom-mcp
+    restart: unless-stopped
+    entrypoint: ["sleep"]
+    command: ["infinity"]
+    environment:
+      HEADROOM_PROXY_URL: http://headroom-proxy:8787
+    volumes:
+      - ${APPDATA_DIR:-./appdata}/headroom:/home/nonroot/.headroom
+    healthcheck:
+      disable: true
     logging:
       driver: json-file
       options:
@@ -162,7 +185,7 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
-      - firecrawl-redis-data:/data
+      - ${APPDATA_DIR:-./appdata}/firecrawl-redis:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 15s
@@ -178,7 +201,7 @@ services:
     image: ${FIRECRAWL_RABBITMQ_IMAGE:-rabbitmq:3-management}
     restart: unless-stopped
     volumes:
-      - firecrawl-rabbitmq-data:/var/lib/rabbitmq
+      - ${APPDATA_DIR:-./appdata}/firecrawl-rabbitmq:/var/lib/rabbitmq
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
       interval: 15s
@@ -200,7 +223,7 @@ services:
       POSTGRES_PASSWORD: ${FIRECRAWL_POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${FIRECRAWL_POSTGRES_DB:-postgres}
     volumes:
-      - firecrawl-postgres-data:/var/lib/postgresql/data
+      - ${APPDATA_DIR:-./appdata}/firecrawl-postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 15s
@@ -268,15 +291,3 @@ services:
       options:
         max-size: "10m"
         max-file: "5"
-
-volumes:
-  hindsight-mcp-data:
-    name: hermes-hindsight-data
-  headroom-workspace-data:
-    name: hermes-headroom-workspace
-  firecrawl-redis-data:
-    name: hermes-firecrawl-redis
-  firecrawl-rabbitmq-data:
-    name: hermes-firecrawl-rabbitmq
-  firecrawl-postgres-data:
-    name: hermes-firecrawl-postgres

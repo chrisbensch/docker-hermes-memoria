@@ -20,6 +20,12 @@ To clear generated state after a failed setup or manual experimentation, run:
 By default it archives old files under `reset-backups/` and leaves the repo ready
 for another `./setup.sh` run.
 
+Headroom's MCP container always starts with the base stack. The HTTP
+proxy/stats service is separate and requires `--profile headroom`. On minimal
+QEMU/virtual CPU profiles, the published Headroom proxy image can exit with
+`SIGILL`. Use host CPU passthrough or omit `--profile headroom` unless you have
+verified `curl -fsS http://127.0.0.1:8787/readyz`.
+
 ## Rootless Docker Workflow (Recommended)
 
 Use this when Docker is running in rootless mode for your deployment user.
@@ -30,8 +36,9 @@ Use this when Docker is running in rootless mode for your deployment user.
 cp .env.example .env
 sed -i "s|^DOCKER_SOCK=.*|DOCKER_SOCK=/run/user/$(id -u)/docker.sock|" .env
 test -S "/run/user/$(id -u)/docker.sock"
-cp hermes-data/.env.example hermes-data/.env
-cp -n hermes-data/config.rootless.yaml hermes-data/config.yaml
+mkdir -p appdata/hermes appdata/hindsight appdata/headroom appdata/firecrawl-redis appdata/firecrawl-rabbitmq appdata/firecrawl-postgres
+cp hermes-data/.env.example appdata/hermes/.env
+cp -n hermes-data/config.rootless.yaml appdata/hermes/config.yaml
 cp web-search/searxng-settings.template.yml web-search/searxng-settings.yml
 secret=$(openssl rand -hex 32)
 sed -i "s/CHANGE-ME-TO-A-RANDOM-SECRET/$secret/" web-search/searxng-settings.yml
@@ -39,15 +46,15 @@ git clone --depth 1 https://github.com/firecrawl/firecrawl.git .firecrawl-src
 ```
 
 Set `HINDSIGHT_API_LLM_*` in `.env` for Hindsight. Add Hermes runtime provider
-keys, such as `DEEPSEEK_API_KEY`, to `hermes-data/.env` if needed.
+keys, such as `DEEPSEEK_API_KEY`, to `appdata/hermes/.env` if needed.
 For rootless web access, also set `FIRECRAWL_API_URL=http://firecrawl-api:3002`
-and `CAMOFOX_URL=http://camofox:9377` in `hermes-data/.env`. `./setup.sh` does
+and `CAMOFOX_URL=http://camofox:9377` in `appdata/hermes/.env`. `./setup.sh` does
 this automatically.
 If the socket check fails, start rootless Docker for this user or set
 `DOCKER_SOCK` to the actual socket before continuing.
 
 2. Create the rootless profile. The first profile created becomes the active
-Hermes profile by writing `hermes-data/active_profile` and seeding gateway state
+Hermes profile by writing `appdata/hermes/active_profile` and seeding gateway state
 so the first container start runs that profile; do not create a profile named
 `default`.
 
@@ -57,8 +64,8 @@ chmod +x scripts/create-profile.sh scripts/create-profile-rootless.sh
 ```
 
 Hindsight and Hermes use separate model settings. To run Hermes Agent itself
-through LM Studio, set `LM_BASE_URL` in `hermes-data/.env`, then add a runtime
-model block to `hermes-data/profiles/research/config.yaml`:
+through LM Studio, set `LM_BASE_URL` in `appdata/hermes/.env`, then add a runtime
+model block to `appdata/hermes/profiles/research/config.yaml`:
 
 ```yaml
 model:
@@ -70,15 +77,17 @@ model:
 3. Validate and start the rootless stack:
 
 ```bash
-docker compose --env-file .env \
+docker compose --env-file .env --profile headroom \
   -f docker-compose.yml \
   -f docker-compose.rootless.yml \
   config
 
-docker compose --env-file .env \
+docker compose --env-file .env --profile headroom \
   -f docker-compose.yml \
   -f docker-compose.rootless.yml \
   up -d
+
+./scripts/normalize-appdata-permissions.sh
 ```
 
 Confirm Hermes sees the provider:
@@ -121,7 +130,7 @@ docker compose --env-file .env -f docker-compose.yml -f docker-compose.rootless.
   exec hermes python -c "from plugins.dashboard_auth.basic import hash_password; print(hash_password('your-password'))"
 ```
 
-Add the hash to `hermes-data/config.yaml`:
+Add the hash to `appdata/hermes/config.yaml`:
 
 ```yaml
 dashboard:
@@ -133,7 +142,7 @@ dashboard:
 Restart with the dashboard profile:
 
 ```bash
-docker compose --env-file .env --profile dashboard \
+docker compose --env-file .env --profile dashboard --profile headroom \
   -f docker-compose.yml \
   -f docker-compose.rootless.yml \
   up -d --force-recreate
@@ -163,8 +172,9 @@ cp .env.example .env
 sed -i "s/^HERMES_UID=.*/HERMES_UID=$(id -u)/" .env
 sed -i "s/^HERMES_GID=.*/HERMES_GID=$(id -g)/" .env
 test -S /var/run/docker.sock
-cp hermes-data/.env.example hermes-data/.env
-cp -n hermes-data/config.rootful.yaml hermes-data/config.yaml
+mkdir -p appdata/hermes appdata/hindsight appdata/headroom appdata/firecrawl-redis appdata/firecrawl-rabbitmq appdata/firecrawl-postgres
+cp hermes-data/.env.example appdata/hermes/.env
+cp -n hermes-data/config.rootful.yaml appdata/hermes/config.yaml
 cp web-search/searxng-settings.template.yml web-search/searxng-settings.yml
 secret=$(openssl rand -hex 32)
 sed -i "s/CHANGE-ME-TO-A-RANDOM-SECRET/$secret/" web-search/searxng-settings.yml
@@ -172,11 +182,11 @@ git clone --depth 1 https://github.com/firecrawl/firecrawl.git .firecrawl-src
 ```
 
 For rootful web access, set `FIRECRAWL_API_URL=http://127.0.0.1:3002` and
-`CAMOFOX_URL=http://127.0.0.1:9377` in `hermes-data/.env`. `./setup.sh` does
+`CAMOFOX_URL=http://127.0.0.1:9377` in `appdata/hermes/.env`. `./setup.sh` does
 this automatically.
 
 2. Create the rootful profile. The first profile created becomes the active
-Hermes profile by writing `hermes-data/active_profile` and seeding gateway state
+Hermes profile by writing `appdata/hermes/active_profile` and seeding gateway state
 so the first container start runs that profile; do not create a profile named
 `default`.
 
@@ -186,14 +196,14 @@ chmod +x scripts/create-profile.sh scripts/create-profile-rootless.sh
 ```
 
 If Hermes Agent itself should use LM Studio, set `LM_BASE_URL` in
-`hermes-data/.env`, then add the runtime model block to
-`hermes-data/profiles/research/config.yaml`.
+`appdata/hermes/.env`, then add the runtime model block to
+`appdata/hermes/profiles/research/config.yaml`.
 
 3. Validate and start the stack:
 
 ```bash
-docker compose --env-file .env config
-docker compose --env-file .env up -d
+docker compose --env-file .env --profile headroom config
+docker compose --env-file .env --profile headroom up -d
 ```
 
 Confirm Hermes is using the named profile:

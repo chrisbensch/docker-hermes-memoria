@@ -6,7 +6,7 @@
 #
 # This removes host networking from Hermes services and mounts the rootless
 # Docker daemon socket so Hermes can still launch stdio MCP containers. Seed
-# ./hermes-data/config.yaml from ./hermes-data/config.rootless.yaml before
+# ./appdata/hermes/config.yaml from ./hermes-data/config.rootless.yaml before
 # starting this stack.
 
 services:
@@ -19,7 +19,7 @@ services:
     environment:
       API_SERVER_HOST: ${API_SERVER_HOST:-0.0.0.0}
     volumes: !override
-      - ./hermes-data:/opt/data
+      - ${APPDATA_DIR:-./appdata}/hermes:/opt/data
       - type: bind
         source: ${DOCKER_SOCK:-/run/user/1000/docker.sock}
         target: /var/run/docker.sock
@@ -31,7 +31,7 @@ services:
     ports:
       - "${HERMES_DASHBOARD_BIND_HOST:-127.0.0.1}:${HERMES_DASHBOARD_HOST_PORT:-9119}:9119"
     volumes: !override
-      - ./hermes-data:/opt/data
+      - ${APPDATA_DIR:-./appdata}/hermes:/opt/data
     command: ["dashboard", "--host", "0.0.0.0", "--port", "9119", "--no-open"]
 
 networks:

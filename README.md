@@ -1,6 +1,6 @@
 # Hermes Agent Compose Stack
 
-This bundle targets an Ubuntu Linux server or desktop where Hermes Agent is not installed directly on the host. Hermes and the long-running sidecars run through Docker Compose; Headroom MCP runs from the Headroom Docker image as a stdio container launched by Hermes.
+This bundle targets an Ubuntu Linux server or desktop where Hermes Agent is not installed directly on the host. Hermes and the long-running sidecars run through Docker Compose; Headroom MCP runs inside a Compose-managed Headroom container and Hermes connects to it with `docker exec`.
 
 For the shortest setup path, run `./setup.sh` or start with `QUICKSTART.md`.
 If a setup attempt gets messy, run `./reset.sh` to archive generated state and
@@ -11,20 +11,21 @@ start fresh.
 - `docker-compose.yml` runs Hermes Agent, Hindsight, Headroom, and the integrated Firecrawl/SearXNG/Camofox web access suite.
 - `docker-compose.rootless.yml` is an override for rootless Docker deployments.
 - `web-search/` contains tracked SearXNG/nginx templates; `web-search/searxng-settings.yml` is generated locally with a unique secret.
-- `hermes-data/config.yaml` is the writable runtime config mounted into Hermes as `/opt/data/config.yaml`.
+- `appdata/` is generated locally and stores portable Hermes runtime data plus sidecar data for Hindsight, Headroom, Redis, RabbitMQ, and Firecrawl Postgres.
+- `appdata/hermes/config.yaml` is the writable runtime config mounted into Hermes as `/opt/data/config.yaml`.
 - `hermes-data/config.rootless.yaml` and `hermes-data/config.rootful.yaml` are blank base-profile seed configs for each deployment mode.
 - `hermes-data/profile-templates/` contains the rootful and rootless templates used for new named profiles.
 - `scripts/create-profile.sh` scaffolds additional profile directories with pinned Hindsight bank URLs and Headroom MCP config.
 - `scripts/create-profile-rootless.sh` does the same for rootless Docker, using Compose service names instead of host loopback.
 - `hermes-config-fragment.yaml` contains the web/browser and MCP blocks if you want to merge them into an existing config.
 - `.env.example` contains Compose-level settings such as image names and ports.
-- `hermes-data/.env.example` is for Hermes runtime provider secrets.
+- `hermes-data/.env.example` is copied to `appdata/hermes/.env` for Hermes runtime provider secrets.
 
 Hermes uses `network_mode: host`, matching the upstream Docker gateway pattern. Hindsight is an HTTP MCP server, while Headroom's MCP server is stdio-based. Hermes reaches them as:
 
 ```text
 http://127.0.0.1:8888/mcp/hermes-research/
-docker run --rm -i --network host --entrypoint headroom ghcr.io/chopratejas/headroom:latest mcp serve
+docker exec -i -e HEADROOM_PROXY_URL=http://headroom-proxy:8787 hermes-headroom-mcp headroom mcp serve
 ```
 
 The Hindsight container follows the upstream Docker recipe:
@@ -33,15 +34,21 @@ The Hindsight container follows the upstream Docker recipe:
 - API and MCP endpoint: `http://127.0.0.1:8888`
 - Profile-pinned MCP endpoint pattern: `http://127.0.0.1:8888/mcp/hermes-<profile>/`
 - UI/control plane: `http://127.0.0.1:9999`
-- Data volume: `/home/hindsight/.pg0`
+- Data directory: `appdata/hindsight`
 
-The Headroom container follows the repo's Docker image and proxy pattern:
+The Headroom MCP container follows the repo's Docker image and stdio MCP pattern:
 
-- Image: `ghcr.io/chopratejas/headroom:latest`
-- Proxy health endpoint: `http://127.0.0.1:8787/readyz`
-- Proxy port: `http://127.0.0.1:8787`
+- Image: `ghcr.io/chopratejas/headroom:0.27.0`
+- Compose container: `hermes-headroom-mcp`
 - MCP transport: stdio via `headroom mcp serve`
-- Shared Docker volume: `hermes-headroom-workspace`
+- Shared data directory: `appdata/headroom`
+
+The Headroom proxy is optional and is behind the Compose `headroom` profile.
+Headroom's `/stats`, `/stats-history`, and `/readyz` HTTP endpoints are only
+available when that profile is running. Some minimal virtual CPUs, including
+QEMU CPU profiles without AVX, can crash the published Headroom proxy images
+with `SIGILL`; use host CPU passthrough or keep the profile disabled on those
+hosts and use the Compose-managed MCP container for on-demand tools.
 
 The web access suite follows the uploaded agent-web pattern, folded into this
 Compose project:
@@ -51,12 +58,17 @@ Compose project:
 - Camofox browser service: `http://127.0.0.1:9377`
 - Local Firecrawl source checkout: `.firecrawl-src/`, ignored by Git
 - Generated SearXNG settings: `web-search/searxng-settings.yml`, ignored by Git
+- Hermes runtime and sidecar data: `appdata/`, ignored by Git
 
 Rootful Hermes reaches Firecrawl and Camofox through host loopback. Rootless
 Hermes reaches them on the Compose network as `http://firecrawl-api:3002` and
 `http://camofox:9377`.
 
-Because Hermes is itself containerized, `docker-compose.yml` mounts `/var/run/docker.sock` into the Hermes container. This lets Hermes launch Headroom's stdio MCP server as a short-lived Docker container. Treat that socket mount as powerful host access and keep this stack on a machine/user boundary you trust.
+In rootless Docker, `./setup.sh` prepares `appdata/hindsight` ownership through
+a short one-off container so Hindsight's unprivileged UID can write its embedded
+Postgres data without requiring host-side `sudo chown`.
+
+Because Hermes is itself containerized, `docker-compose.yml` mounts the Docker socket into the Hermes container. This lets Hermes run `docker exec -i hermes-headroom-mcp headroom mcp serve` for Headroom's stdio MCP server. Treat that socket mount as powerful host access and keep this stack on a machine/user boundary you trust.
 
 ## Memory Model
 
@@ -108,8 +120,9 @@ To reset a failed or experimental setup:
 
 The reset script stops Compose services, archives generated files under
 `reset-backups/`, keeps tracked templates and seed configs, and then points you
-back to `./setup.sh`. Use `./reset.sh --hard --volumes` only when you also want
-to permanently delete local runtime files and the Compose-managed Docker volumes.
+back to `./setup.sh`. Use `./reset.sh --hard` only when you also want to
+permanently delete local runtime files such as `appdata/`; `--volumes` is only
+for cleaning up legacy Docker named volumes from older revisions.
 
 1. Enter the stack directory and confirm the Docker Compose plugin is available:
 
@@ -128,7 +141,8 @@ cp .env.example .env
 sed -i "s/^HERMES_UID=.*/HERMES_UID=$(id -u)/" .env
 sed -i "s/^HERMES_GID=.*/HERMES_GID=$(id -g)/" .env
 test -S /var/run/docker.sock
-cp -n hermes-data/config.rootful.yaml hermes-data/config.yaml
+mkdir -p appdata/hermes appdata/hindsight appdata/headroom appdata/firecrawl-redis appdata/firecrawl-rabbitmq appdata/firecrawl-postgres
+cp -n hermes-data/config.rootful.yaml appdata/hermes/config.yaml
 cp web-search/searxng-settings.template.yml web-search/searxng-settings.yml
 secret=$(openssl rand -hex 32)
 sed -i "s/CHANGE-ME-TO-A-RANDOM-SECRET/$secret/" web-search/searxng-settings.yml
@@ -157,12 +171,12 @@ HINDSIGHT_API_LLM_API_KEY=sk-your-deepseek-key
 4. If Hermes itself needs provider keys, create `/opt/data` runtime secrets from the host-mounted directory:
 
 ```bash
-cp hermes-data/.env.example hermes-data/.env
+cp hermes-data/.env.example appdata/hermes/.env
 ```
 
-Then edit `hermes-data/.env`.
+Then edit `appdata/hermes/.env`.
 
-For Hermes runtime providers, `hermes-data/.env.example` includes placeholders
+For Hermes runtime providers, `appdata/hermes/.env.example` includes placeholders
 for `DEEPSEEK_API_KEY`, `LM_BASE_URL`, and `LM_API_KEY`.
 For web access in rootful mode, set:
 
@@ -178,7 +192,7 @@ chmod +x scripts/create-profile.sh scripts/create-profile-rootless.sh
 ```
 
 6. Create each Hermes profile you want. The first profile created becomes the
-active Hermes profile by writing `hermes-data/active_profile` and gateway state
+active Hermes profile by writing `appdata/hermes/active_profile` and gateway state
 files so the first container start runs that profile. `default` is reserved by
 Hermes for the base home and should not be used as a profile name. The default
 bank name is `hermes-<profile>` and Headroom MCP is included automatically:
@@ -190,7 +204,7 @@ bank name is `hermes-<profile>` and Headroom MCP is included automatically:
 
 Hindsight's `HINDSIGHT_API_LLM_*` values do not configure Hermes Agent's own
 chat model. To make Hermes use LM Studio, also set the runtime model in the
-active profile config, for example `hermes-data/profiles/research/config.yaml`:
+active profile config, for example `appdata/hermes/profiles/research/config.yaml`:
 
 ```yaml
 model:
@@ -205,13 +219,13 @@ For LM Studio on another LAN machine, use that machine's IP address instead of
 7. Validate the Compose file:
 
 ```bash
-docker compose --env-file .env config
+docker compose --env-file .env --profile headroom config
 ```
 
 8. Start the stack:
 
 ```bash
-docker compose --env-file .env up -d
+docker compose --env-file .env --profile headroom up -d
 ```
 
 9. Check the sidecars:
@@ -237,7 +251,7 @@ Repeat that command for each bank, such as `hermes-coder`.
 To include the local dashboard service:
 
 ```bash
-docker compose --env-file .env --profile dashboard up -d
+docker compose --env-file .env --profile dashboard --profile headroom up -d
 ```
 
 ## Rootless Docker Setup
@@ -272,11 +286,12 @@ starting the stack.
 3. Seed the writable base config and create profiles with the rootless scaffold:
 
 ```bash
-cp -n hermes-data/config.rootless.yaml hermes-data/config.yaml
+mkdir -p appdata/hermes appdata/hindsight appdata/headroom appdata/firecrawl-redis appdata/firecrawl-rabbitmq appdata/firecrawl-postgres
+cp -n hermes-data/config.rootless.yaml appdata/hermes/config.yaml
 ./scripts/create-profile-rootless.sh research
 ```
 
-The scaffold writes `research` to `hermes-data/active_profile` and seeds gateway
+The scaffold writes `research` to `appdata/hermes/active_profile` and seeds gateway
 state when no active profile exists yet, so the first gateway start uses the
 named profile instead of the base `default` profile.
 
@@ -284,12 +299,12 @@ Rootless profile configs use:
 
 ```text
 http://hindsight-mcp:8888/mcp/hermes-research/
-docker run --network hermes-compose-mcp-rootless ... headroom mcp serve
+docker exec -i hermes-headroom-mcp headroom mcp serve
 ```
 
 Do not reuse configs generated by `create-profile.sh` for rootless profiles
-unless you replace their `127.0.0.1` MCP URLs and Headroom network arguments.
-For rootless web access, set these in `hermes-data/.env`:
+unless you replace their `127.0.0.1` MCP URLs with Compose service names.
+For rootless web access, set these in `appdata/hermes/.env`:
 
 ```bash
 FIRECRAWL_API_URL=http://firecrawl-api:3002
@@ -299,15 +314,23 @@ CAMOFOX_URL=http://camofox:9377
 4. Validate and start the rootless stack:
 
 ```bash
-docker compose --env-file .env \
+docker compose --env-file .env --profile headroom \
   -f docker-compose.yml \
   -f docker-compose.rootless.yml \
   config
 
-docker compose --env-file .env \
+docker compose --env-file .env --profile headroom \
   -f docker-compose.yml \
   -f docker-compose.rootless.yml \
   up -d
+```
+
+Rootless containers write bind-mounted state with user-namespace mapped numeric
+owners such as `100998` and `100999`. After the first startup, normalize Hermes
+and Hindsight for host group readability:
+
+```bash
+./scripts/normalize-appdata-permissions.sh
 ```
 
 5. Check the sidecars from the Ubuntu host:
@@ -331,7 +354,7 @@ curl -fsS -X PUT "http://127.0.0.1:8888/v1/default/banks/hermes-research" \
 To include the dashboard in rootless mode:
 
 ```bash
-docker compose --env-file .env --profile dashboard \
+docker compose --env-file .env --profile dashboard --profile headroom \
   -f docker-compose.yml \
   -f docker-compose.rootless.yml \
   up -d
@@ -357,7 +380,7 @@ HEADROOM_PROXY_BIND_HOST=0.0.0.0
 Then restart:
 
 ```bash
-docker compose --env-file .env --profile dashboard \
+docker compose --env-file .env --profile dashboard --profile headroom \
   -f docker-compose.yml \
   -f docker-compose.rootless.yml \
   up -d --force-recreate
@@ -374,7 +397,7 @@ Headroom history:        http://<server-ip>:8787/stats-history
 
 Hermes Dashboard refuses non-loopback binds until dashboard auth is configured.
 Set `dashboard.basic_auth.username` and `dashboard.basic_auth.password_hash` in
-the base runtime config, `hermes-data/config.yaml`, then use the explicit
+the base runtime config, `appdata/hermes/config.yaml`, then use the explicit
 `/login?next=%2F` URL for
 username/password auth. The dashboard root can first auto-redirect through the
 OAuth route, which may return an internal server error when only basic auth is
@@ -396,8 +419,8 @@ configure those Hermes platforms to bind `0.0.0.0` inside the container.
 - If you need to create, inspect, or delete banks manually, temporarily enable the commented `hindsight_admin` MCP server in the relevant profile config. Keep it disabled during normal profile use.
 - If you change `HEADROOM_PROXY_HOST_PORT`, update the matching `HEADROOM_PROXY_URL` in each profile config or template that should use it.
 - If you change `HEADROOM_IMAGE`, update the same image string in each profile config or template unless your Hermes config supports environment interpolation.
-- Keep `hermes-data/config.rootless.yaml` and `hermes-data/config.rootful.yaml` as reusable blank base-profile seed configs. Make day-to-day agent setup changes in the active profile config under `hermes-data/profiles/<name>/config.yaml`.
+- Keep `hermes-data/config.rootless.yaml` and `hermes-data/config.rootful.yaml` as reusable blank base-profile seed configs. Make day-to-day agent setup changes in the active profile config under `appdata/hermes/profiles/<name>/config.yaml`.
 - Hermes still exposes `default` as its built-in base `HERMES_HOME`; this stack keeps that base blank and makes the quickstart-created named profile active.
 - Headroom's upstream Compose stack also includes Qdrant and Neo4j for memory-oriented features. This bundle keeps the base stack lean; add those services later if you enable Headroom features that require them.
-- Do not run a separate host-installed Hermes against the same `hermes-data` directory.
-- Do not point two Hermes containers at the same `hermes-data` directory simultaneously.
+- Do not run a separate host-installed Hermes against the same `appdata/hermes` directory.
+- Do not point two Hermes containers at the same `appdata/hermes` directory simultaneously.

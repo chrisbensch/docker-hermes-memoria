@@ -1,6 +1,7 @@
 .env
 docker-agent-web/
 .firecrawl-src/
+appdata/
 web-search/searxng-settings.yml
 reset-backups/
 hermes-data/.cache/

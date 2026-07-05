@@ -6,9 +6,10 @@ cd "$script_dir"
 
 env_file="$script_dir/.env"
 env_example="$script_dir/.env.example"
-data_dir="$script_dir/hermes-data"
+seed_dir="$script_dir/hermes-data"
+hermes_env_example="$seed_dir/.env.example"
+data_dir="$script_dir/appdata/hermes"
 hermes_env_file="$data_dir/.env"
-hermes_env_example="$data_dir/.env.example"
 base_config="$data_dir/config.yaml"
 
 timestamp() {
@@ -255,6 +256,19 @@ ensure_firecrawl_source() {
   chmod a+r "$source_dir/apps/nuq-postgres/Dockerfile" "$source_dir/apps/nuq-postgres/nuq.sql" 2>/dev/null || true
 }
 
+prepare_rootless_hindsight_dir() {
+  image=$1
+  dir=$2
+
+  printf 'Preparing rootless Hindsight data ownership at %s...\n' "$dir" >&2
+  docker run --rm \
+    --user 0:0 \
+    -v "$dir:/mnt" \
+    --entrypoint sh \
+    "$image" \
+    -c 'chown 1000:1000 /mnt && rm -f /mnt/.chown-test' >/dev/null
+}
+
 default_lm_base_url() {
   mode=$1
   case "$mode" in
@@ -279,6 +293,12 @@ while :; do
   esac
 done
 
+default_appdata_dir=$(env_default "$env_file" APPDATA_DIR ./appdata)
+case "$default_appdata_dir" in
+  /*) default_appdata_host_dir=$default_appdata_dir ;;
+  *) default_appdata_host_dir="$script_dir/$default_appdata_dir" ;;
+esac
+data_dir="$default_appdata_host_dir/hermes"
 default_profile=$(cat "$data_dir/active_profile" 2>/dev/null || printf 'research')
 while :; do
   profile_name=$(prompt_default 'Hermes profile name' "$default_profile")
@@ -289,18 +309,18 @@ done
 
 bank_id=$(prompt_default 'Hindsight bank ID' "hermes-$profile_name")
 
-uid_value=$(prompt_default 'Host UID for hermes-data ownership' "$(id -u)")
-gid_value=$(prompt_default 'Host GID for hermes-data ownership' "$(id -g)")
+uid_value=$(prompt_default 'Host UID for appdata ownership' "$(id -u)")
+gid_value=$(prompt_default 'Host GID for appdata ownership' "$(id -g)")
 
 case "$mode" in
   rootless)
     socket_default="/run/user/$(id -u)/docker.sock"
-    seed_config="$data_dir/config.rootless.yaml"
+    seed_config="$seed_dir/config.rootless.yaml"
     profile_script="$script_dir/scripts/create-profile-rootless.sh"
     ;;
   rootful)
     socket_default=/var/run/docker.sock
-    seed_config="$data_dir/config.rootful.yaml"
+    seed_config="$seed_dir/config.rootful.yaml"
     profile_script="$script_dir/scripts/create-profile.sh"
     ;;
 esac
@@ -315,7 +335,34 @@ if [ ! -f "$env_file" ]; then
 else
   backup_file "$env_file"
 fi
-mkdir -p "$data_dir"
+
+set_env_var "$env_file" HERMES_UID "$uid_value"
+set_env_var "$env_file" HERMES_GID "$gid_value"
+set_env_var "$env_file" HERMES_HOME_MODE "$(env_default "$env_file" HERMES_HOME_MODE 0755)"
+set_env_var "$env_file" DOCKER_SOCK "$docker_socket"
+appdata_dir=$(env_default "$env_file" APPDATA_DIR ./appdata)
+set_env_var "$env_file" APPDATA_DIR "$appdata_dir"
+case "$appdata_dir" in
+  /*) appdata_host_dir=$appdata_dir ;;
+  *) appdata_host_dir="$script_dir/$appdata_dir" ;;
+esac
+data_dir="$appdata_host_dir/hermes"
+hermes_env_file="$data_dir/.env"
+base_config="$data_dir/config.yaml"
+mkdir -p \
+  "$data_dir" \
+  "$appdata_host_dir/hindsight" \
+  "$appdata_host_dir/headroom" \
+  "$appdata_host_dir/firecrawl-redis" \
+  "$appdata_host_dir/firecrawl-rabbitmq" \
+  "$appdata_host_dir/firecrawl-postgres"
+
+hindsight_image=$(env_default "$env_file" HINDSIGHT_IMAGE ghcr.io/vectorize-io/hindsight:latest)
+set_env_var "$env_file" HINDSIGHT_IMAGE "$hindsight_image"
+if [ "$mode" = rootless ]; then
+  prepare_rootless_hindsight_dir "$hindsight_image" "$appdata_host_dir/hindsight"
+fi
+
 if [ ! -f "$hermes_env_file" ]; then
   cp "$hermes_env_example" "$hermes_env_file"
 else
@@ -326,10 +373,6 @@ if [ ! -f "$base_config" ]; then
 else
   backup_file "$base_config"
 fi
-
-set_env_var "$env_file" HERMES_UID "$uid_value"
-set_env_var "$env_file" HERMES_GID "$gid_value"
-set_env_var "$env_file" DOCKER_SOCK "$docker_socket"
 
 firecrawl_source_dir=$(env_default "$env_file" FIRECRAWL_SOURCE_DIR ./.firecrawl-src)
 set_env_var "$env_file" FIRECRAWL_IMAGE "$(env_default "$env_file" FIRECRAWL_IMAGE ghcr.io/firecrawl/firecrawl:latest)"
@@ -387,7 +430,12 @@ set_env_var "$env_file" HINDSIGHT_API_LLM_MODEL "$hindsight_model"
 set_env_var "$env_file" HINDSIGHT_API_LLM_BASE_URL "$hindsight_base"
 set_env_var "$env_file" HINDSIGHT_API_LLM_API_KEY "$hindsight_key"
 
-if [ "$hindsight_provider" = lmstudio ] && prompt_yes_no 'Point Headroom proxy at the same LM Studio URL' y; then
+headroom_service=no
+if prompt_yes_no 'Start the Headroom proxy/stats service' y; then
+  headroom_service=yes
+fi
+
+if [ "$headroom_service" = yes ] && [ "$hindsight_provider" = lmstudio ] && prompt_yes_no 'Point Headroom proxy at the same LM Studio URL' y; then
   set_env_var "$env_file" OPENAI_TARGET_API_URL "$hindsight_base"
 fi
 
@@ -401,7 +449,7 @@ if prompt_yes_no 'Expose browser UIs on the LAN' n; then
   dashboard_public=yes
   set_env_var "$env_file" HERMES_DASHBOARD_BIND_HOST 0.0.0.0
   set_env_var "$env_file" HINDSIGHT_UI_BIND_HOST 0.0.0.0
-  if prompt_yes_no 'Expose Headroom proxy/stats on the LAN too' n; then
+  if [ "$headroom_service" = yes ] && prompt_yes_no 'Expose Headroom proxy/stats on the LAN too' n; then
     set_env_var "$env_file" HEADROOM_PROXY_BIND_HOST 0.0.0.0
   else
     set_env_var "$env_file" HEADROOM_PROXY_BIND_HOST 127.0.0.1
@@ -432,8 +480,11 @@ if [ "$dashboard_public" = yes ]; then
   fi
 fi
 
-chmod +x "$script_dir/scripts/create-profile.sh" "$script_dir/scripts/create-profile-rootless.sh"
-HERMES_PROFILE_ACTIVATE=1 "$profile_script" "$profile_name" "$bank_id"
+chmod +x \
+  "$script_dir/scripts/create-profile.sh" \
+  "$script_dir/scripts/create-profile-rootless.sh" \
+  "$script_dir/scripts/normalize-appdata-permissions.sh"
+HERMES_DATA_DIR="$data_dir" HERMES_APPDATA_DIR="$appdata_host_dir" HERMES_PROFILE_ACTIVATE=1 "$profile_script" "$profile_name" "$bank_id"
 
 profile_config="$data_dir/profiles/$profile_name/config.yaml"
 backup_file "$profile_config"
@@ -497,11 +548,17 @@ if [ "$mode" = rootless ]; then
   if [ "$dashboard_service" = yes ]; then
     compose_cmd="$compose_cmd --profile dashboard"
   fi
+  if [ "$headroom_service" = yes ]; then
+    compose_cmd="$compose_cmd --profile headroom"
+  fi
   compose_cmd="$compose_cmd -f docker-compose.yml -f docker-compose.rootless.yml"
 else
   compose_cmd='docker compose --env-file .env'
   if [ "$dashboard_service" = yes ]; then
     compose_cmd="$compose_cmd --profile dashboard"
+  fi
+  if [ "$headroom_service" = yes ]; then
+    compose_cmd="$compose_cmd --profile headroom"
   fi
 fi
 
@@ -522,9 +579,17 @@ printf 'Validate the Compose file:\n'
 printf '  %s config\n\n' "$compose_cmd"
 printf 'Bring the stack up:\n'
 printf '  %s up -d\n\n' "$compose_cmd"
+if [ "$mode" = rootless ]; then
+  printf 'Normalize rootless appdata permissions after the containers create their state:\n'
+  printf '  ./scripts/normalize-appdata-permissions.sh\n\n'
+fi
 printf 'Initialize the Hindsight bank after the stack is healthy:\n'
 printf '  curl -fsS -X PUT "http://127.0.0.1:8888/v1/default/banks/%s" -H "content-type: application/json" -d '\''{}'\''\n\n' "$bank_id"
 printf 'Check the integrated web stack after startup:\n'
+if [ "$headroom_service" = yes ]; then
+  printf '  curl -fsS http://127.0.0.1:%s/readyz\n' "$(env_default "$env_file" HEADROOM_PROXY_HOST_PORT 8787)"
+  printf '  curl -fsS http://127.0.0.1:%s/stats\n' "$(env_default "$env_file" HEADROOM_PROXY_HOST_PORT 8787)"
+fi
 printf '  curl -fsS http://127.0.0.1:%s/v0/health/liveness\n' "$(env_default "$env_file" FIRECRAWL_HOST_PORT 3002)"
 printf '  curl -fsS "http://127.0.0.1:%s/search?q=test&format=json"\n' "$(env_default "$env_file" SEARXNG_HOST_PORT 8889)"
 printf '  curl -fsS http://127.0.0.1:%s/health\n\n' "$(env_default "$env_file" CAMOFOX_HOST_PORT 9377)"
@@ -533,4 +598,8 @@ if [ "$dashboard_service" = yes ]; then
   printf '  Hermes Dashboard:        http://%s:%s/login?next=%%2F\n' "$dashboard_host" "$(env_default "$env_file" HERMES_DASHBOARD_HOST_PORT 9119)"
 fi
 printf '  Hindsight Control Plane: http://%s:%s\n' "$hindsight_host" "$(env_default "$env_file" HINDSIGHT_UI_HOST_PORT 9999)"
-printf '  Headroom stats:          http://%s:%s/stats\n' "$headroom_host" "$(env_default "$env_file" HEADROOM_PROXY_HOST_PORT 8787)"
+if [ "$headroom_service" = yes ]; then
+  printf '  Headroom stats:          http://%s:%s/stats\n' "$headroom_host" "$(env_default "$env_file" HEADROOM_PROXY_HOST_PORT 8787)"
+else
+  printf '  Headroom stats:          disabled; rerun with the headroom profile to expose /stats\n'
+fi

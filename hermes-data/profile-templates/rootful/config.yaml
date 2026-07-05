@@ -36,18 +36,12 @@ mcp_servers:
   headroom:
     command: "docker"
     args:
-      - "run"
-      - "--rm"
+      - "exec"
       - "-i"
-      - "--network"
-      - "host"
-      - "--entrypoint"
-      - "headroom"
       - "-e"
-      - "HEADROOM_PROXY_URL=http://127.0.0.1:8787"
-      - "-v"
-      - "hermes-headroom-workspace:/home/nonroot/.headroom"
-      - "ghcr.io/chopratejas/headroom:latest"
+      - "HEADROOM_PROXY_URL=http://headroom-proxy:8787"
+      - "hermes-headroom-mcp"
+      - "headroom"
       - "mcp"
       - "serve"
     enabled: true

@@ -31,7 +31,7 @@ Inside the Compose network, Hermes talks to Hindsight through the
 Headroom is wired as:
 
 ```text
-docker run --rm -i --network hermes-compose-mcp-rootless --entrypoint headroom -e HEADROOM_PROXY_URL=http://headroom-proxy:8787 -v hermes-headroom-workspace:/home/nonroot/.headroom ghcr.io/chopratejas/headroom:latest mcp serve
+docker exec -i -e HEADROOM_PROXY_URL=http://headroom-proxy:8787 hermes-headroom-mcp headroom mcp serve
 ```
 
 The long-running `headroom-proxy` Compose service must be running for proxy

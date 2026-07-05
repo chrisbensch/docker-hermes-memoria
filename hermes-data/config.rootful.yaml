@@ -1,8 +1,8 @@
 # Minimal base Hermes config for the compose-managed rootful deployment.
 #
-# Copy this file to hermes-data/config.yaml when using docker-compose.yml
+# Copy this file to appdata/hermes/config.yaml when using docker-compose.yml
 # without the rootless override. Profile-specific MCP wiring is generated under
-# hermes-data/profiles/<name>/ by create-profile.sh.
+# appdata/hermes/profiles/<name>/ by create-profile.sh.
 
 # Optional Hermes runtime model. Hindsight has separate HINDSIGHT_API_LLM_*
 # settings in the Compose .env file; this block controls Hermes Agent itself.
@@ -12,5 +12,5 @@
 #   base_url: http://127.0.0.1:1234/v1
 
 # Keep the base profile blank. The quickstart-created profile becomes active
-# through hermes-data/active_profile and owns its Hindsight/Headroom config.
+# through appdata/hermes/active_profile and owns its Hindsight/Headroom config.
 mcp_servers: {}

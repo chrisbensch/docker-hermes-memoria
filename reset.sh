@@ -13,9 +13,9 @@ Reset generated Hermes Compose state so ./setup.sh can run from a clean slate.
 Options:
   --hard       Delete generated files instead of archiving them.
   --yes        Do not prompt for confirmation.
-  --keep-env   Keep .env and hermes-data/.env.
+  --keep-env   Keep .env and Hermes runtime .env where possible.
   --no-down    Do not run docker compose down.
-  --volumes    Remove Compose-managed Docker volumes too.
+  --volumes    Also remove legacy Compose-managed Docker volumes.
   -h, --help   Show this help.
 
 By default, generated files are moved into reset-backups/<timestamp>/.
@@ -82,6 +82,7 @@ compose_rootless="$compose_base -f docker-compose.yml -f docker-compose.rootless
 paths_to_reset='
 	hermes-data/.clean_shutdown
 	.firecrawl-src
+	appdata
 	hermes-data/.cua-driver
 hermes-data/.hermes_history
 hermes-data/.local
@@ -132,6 +133,8 @@ hermes-data/state.db-wal
 env_paths='
 .env
 .env.bak-*
+appdata/hermes/.env
+appdata/hermes/.env.bak-*
 hermes-data/.env
 hermes-data/.env.bak-*
 '
@@ -146,9 +149,9 @@ else
 fi
 
 if [ "$keep_env" = yes ]; then
-  printf 'Environment files: keep .env and hermes-data/.env.\n'
+  printf 'Environment files: keep .env and Hermes runtime .env where possible.\n'
 else
-  printf 'Environment files: reset .env and hermes-data/.env.\n'
+  printf 'Environment files: reset .env and Hermes runtime .env.\n'
 fi
 
 if [ "$run_down" = yes ]; then
@@ -158,9 +161,9 @@ else
 fi
 
 if [ "$remove_volumes" = yes ]; then
-  printf 'Docker volumes: remove Compose-managed Hindsight and Headroom volumes.\n'
+  printf 'Docker volumes: remove legacy Compose-managed volumes.\n'
 else
-  printf 'Docker volumes: keep named Docker volumes.\n'
+  printf 'Docker volumes: keep any legacy named Docker volumes.\n'
 fi
 
 if [ "$assume_yes" != yes ]; then
@@ -226,11 +229,10 @@ if [ "$keep_env" != yes ]; then
   done
 fi
 
-mkdir -p hermes-data/profiles
-
 printf '\nReset complete.\n'
 if [ "$hard" != yes ]; then
   printf 'Archived state: %s\n' "$backup_dir"
 fi
+printf 'Generated appdata will be recreated by ./setup.sh.\n'
 printf 'Next step:\n'
 printf '  ./setup.sh\n'
