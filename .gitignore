@@ -1,4 +1,5 @@
 .env
+.env.bak-*
 docker-agent-web/
 .firecrawl-src/
 appdata/

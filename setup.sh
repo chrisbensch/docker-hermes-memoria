@@ -151,6 +151,7 @@ append_model_config() {
   model=$3
   base_url=$4
   remove_yaml_block "$file" model
+  remove_yaml_block "$file" auxiliary
   {
     printf '\nmodel:\n'
     printf '  provider: %s\n' "$provider"
@@ -158,6 +159,23 @@ append_model_config() {
     if [ -n "$base_url" ]; then
       printf '  base_url: %s\n' "$base_url"
     fi
+    printf '\nauxiliary:\n'
+    for slot in \
+      vision \
+      web_extract \
+      compression \
+      skills_hub \
+      approval \
+      mcp \
+      title_generation \
+      triage_specifier \
+      kanban_decomposer \
+      profile_describer \
+      curator; do
+      printf '  %s:\n' "$slot"
+      printf '    provider: %s\n' "$provider"
+      printf '    model: %s\n' "$model"
+    done
   } >> "$file"
 }
 
