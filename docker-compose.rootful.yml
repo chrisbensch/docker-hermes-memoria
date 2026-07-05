@@ -1,0 +1,31 @@
+# Rootful Docker override.
+#
+# Use with:
+#   docker compose --env-file .env -f docker-compose.yml -f docker-compose.rootful.yml up -d
+#
+# This restores host networking for Hermes services and mounts the rootful Docker
+# daemon socket. Seed ./appdata/hermes/config.yaml from
+# ./hermes-data/config.rootful.yaml before starting this mode.
+
+services:
+  hermes:
+    network_mode: host
+    ports: !reset []
+    volumes: !override
+      - ${APPDATA_DIR:-./appdata}/hermes:/opt/data
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        bind:
+          create_host_path: false
+
+  hermes-dashboard:
+    network_mode: host
+    ports: !reset []
+    volumes: !override
+      - ${APPDATA_DIR:-./appdata}/hermes:/opt/data
+    command: ["dashboard", "--host", "127.0.0.1", "--no-open"]
+
+networks:
+  default:
+    name: hermes-compose-mcp-rootful

@@ -448,26 +448,17 @@ set_env_var "$env_file" HINDSIGHT_API_LLM_MODEL "$hindsight_model"
 set_env_var "$env_file" HINDSIGHT_API_LLM_BASE_URL "$hindsight_base"
 set_env_var "$env_file" HINDSIGHT_API_LLM_API_KEY "$hindsight_key"
 
-headroom_service=no
-if prompt_yes_no 'Start the Headroom proxy/stats service' y; then
-  headroom_service=yes
-fi
-
-if [ "$headroom_service" = yes ] && [ "$hindsight_provider" = lmstudio ] && prompt_yes_no 'Point Headroom proxy at the same LM Studio URL' y; then
+if [ "$hindsight_provider" = lmstudio ] && prompt_yes_no 'Point Headroom proxy at the same LM Studio URL' y; then
   set_env_var "$env_file" OPENAI_TARGET_API_URL "$hindsight_base"
 fi
 
-dashboard_service=no
 dashboard_public=no
-if prompt_yes_no 'Start the Hermes Dashboard service' y; then
-  dashboard_service=yes
-fi
 
 if prompt_yes_no 'Expose browser UIs on the LAN' n; then
   dashboard_public=yes
   set_env_var "$env_file" HERMES_DASHBOARD_BIND_HOST 0.0.0.0
   set_env_var "$env_file" HINDSIGHT_UI_BIND_HOST 0.0.0.0
-  if [ "$headroom_service" = yes ] && prompt_yes_no 'Expose Headroom proxy/stats on the LAN too' n; then
+  if prompt_yes_no 'Expose Headroom proxy/stats on the LAN too' n; then
     set_env_var "$env_file" HEADROOM_PROXY_BIND_HOST 0.0.0.0
   else
     set_env_var "$env_file" HEADROOM_PROXY_BIND_HOST 127.0.0.1
@@ -563,21 +554,8 @@ fi
 
 if [ "$mode" = rootless ]; then
   compose_cmd='docker compose --env-file .env'
-  if [ "$dashboard_service" = yes ]; then
-    compose_cmd="$compose_cmd --profile dashboard"
-  fi
-  if [ "$headroom_service" = yes ]; then
-    compose_cmd="$compose_cmd --profile headroom"
-  fi
-  compose_cmd="$compose_cmd -f docker-compose.yml -f docker-compose.rootless.yml"
 else
-  compose_cmd='docker compose --env-file .env'
-  if [ "$dashboard_service" = yes ]; then
-    compose_cmd="$compose_cmd --profile dashboard"
-  fi
-  if [ "$headroom_service" = yes ]; then
-    compose_cmd="$compose_cmd --profile headroom"
-  fi
+  compose_cmd='docker compose --env-file .env -f docker-compose.yml -f docker-compose.rootful.yml'
 fi
 
 server_ip=$(ip route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") {print $(i + 1); exit}}' || true)
@@ -604,20 +582,12 @@ fi
 printf 'Initialize the Hindsight bank after the stack is healthy:\n'
 printf '  curl -fsS -X PUT "http://127.0.0.1:8888/v1/default/banks/%s" -H "content-type: application/json" -d '\''{}'\''\n\n' "$bank_id"
 printf 'Check the integrated web stack after startup:\n'
-if [ "$headroom_service" = yes ]; then
-  printf '  curl -fsS http://127.0.0.1:%s/readyz\n' "$(env_default "$env_file" HEADROOM_PROXY_HOST_PORT 8787)"
-  printf '  curl -fsS http://127.0.0.1:%s/stats\n' "$(env_default "$env_file" HEADROOM_PROXY_HOST_PORT 8787)"
-fi
+printf '  curl -fsS http://127.0.0.1:%s/readyz\n' "$(env_default "$env_file" HEADROOM_PROXY_HOST_PORT 8787)"
+printf '  curl -fsS http://127.0.0.1:%s/stats\n' "$(env_default "$env_file" HEADROOM_PROXY_HOST_PORT 8787)"
 printf '  curl -fsS http://127.0.0.1:%s/v0/health/liveness\n' "$(env_default "$env_file" FIRECRAWL_HOST_PORT 3002)"
 printf '  curl -fsS "http://127.0.0.1:%s/search?q=test&format=json"\n' "$(env_default "$env_file" SEARXNG_HOST_PORT 8889)"
 printf '  curl -fsS http://127.0.0.1:%s/health\n\n' "$(env_default "$env_file" CAMOFOX_HOST_PORT 9377)"
 printf 'Useful URLs:\n'
-if [ "$dashboard_service" = yes ]; then
-  printf '  Hermes Dashboard:        http://%s:%s/login?next=%%2F\n' "$dashboard_host" "$(env_default "$env_file" HERMES_DASHBOARD_HOST_PORT 9119)"
-fi
+printf '  Hermes Dashboard:        http://%s:%s/login?next=%%2F\n' "$dashboard_host" "$(env_default "$env_file" HERMES_DASHBOARD_HOST_PORT 9119)"
 printf '  Hindsight Control Plane: http://%s:%s\n' "$hindsight_host" "$(env_default "$env_file" HINDSIGHT_UI_HOST_PORT 9999)"
-if [ "$headroom_service" = yes ]; then
-  printf '  Headroom stats:          http://%s:%s/stats\n' "$headroom_host" "$(env_default "$env_file" HEADROOM_PROXY_HOST_PORT 8787)"
-else
-  printf '  Headroom stats:          disabled; rerun with the headroom profile to expose /stats\n'
-fi
+printf '  Headroom stats:          http://%s:%s/stats\n' "$headroom_host" "$(env_default "$env_file" HEADROOM_PROXY_HOST_PORT 8787)"

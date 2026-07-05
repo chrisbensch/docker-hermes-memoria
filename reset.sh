@@ -75,9 +75,9 @@ done
 backup_root="$script_dir/reset-backups"
 backup_dir="$backup_root/$(timestamp)-$$"
 
-compose_base='docker compose --env-file .env --profile dashboard'
-compose_rootful="$compose_base"
-compose_rootless="$compose_base -f docker-compose.yml -f docker-compose.rootless.yml"
+compose_base='docker compose --env-file .env'
+compose_rootless="$compose_base"
+compose_rootful="$compose_base -f docker-compose.yml -f docker-compose.rootful.yml"
 
 paths_to_reset='
 	hermes-data/.clean_shutdown

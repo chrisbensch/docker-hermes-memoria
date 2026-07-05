@@ -1,7 +1,7 @@
 # Minimal base Hermes config for the compose-managed rootful deployment.
 #
-# Copy this file to appdata/hermes/config.yaml when using docker-compose.yml
-# without the rootless override. Profile-specific MCP wiring is generated under
+# Copy this file to appdata/hermes/config.yaml when using
+# docker-compose.rootful.yml. Profile-specific MCP wiring is generated under
 # appdata/hermes/profiles/<name>/ by create-profile.sh.
 
 # Optional Hermes runtime model. Hindsight has separate HINDSIGHT_API_LLM_*

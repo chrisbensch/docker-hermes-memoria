@@ -20,11 +20,10 @@ To clear generated state after a failed setup or manual experimentation, run:
 By default it archives old files under `reset-backups/` and leaves the repo ready
 for another `./setup.sh` run.
 
-Headroom's MCP container always starts with the base stack. The HTTP
-proxy/stats service is separate and requires `--profile headroom`. On minimal
-QEMU/virtual CPU profiles, the published Headroom proxy image can exit with
-`SIGILL`. Use host CPU passthrough or omit `--profile headroom` unless you have
-verified `curl -fsS http://127.0.0.1:8787/readyz`.
+Headroom's MCP container and HTTP proxy/stats service start with the base stack.
+On minimal QEMU/virtual CPU profiles, the published Headroom proxy image can
+exit with `SIGILL`. Use host CPU passthrough and verify it with
+`curl -fsS http://127.0.0.1:8787/readyz`.
 
 ## Rootless Docker Workflow (Recommended)
 
@@ -77,15 +76,9 @@ model:
 3. Validate and start the rootless stack:
 
 ```bash
-docker compose --env-file .env --profile headroom \
-  -f docker-compose.yml \
-  -f docker-compose.rootless.yml \
-  config
+docker compose --env-file .env config
 
-docker compose --env-file .env --profile headroom \
-  -f docker-compose.yml \
-  -f docker-compose.rootless.yml \
-  up -d
+docker compose --env-file .env up -d
 
 ./scripts/normalize-appdata-permissions.sh
 ```
@@ -93,10 +86,8 @@ docker compose --env-file .env --profile headroom \
 Confirm Hermes sees the provider:
 
 ```bash
-docker compose --env-file .env -f docker-compose.yml -f docker-compose.rootless.yml \
-  exec hermes hermes profile list
-docker compose --env-file .env -f docker-compose.yml -f docker-compose.rootless.yml \
-  exec hermes hermes status
+docker compose --env-file .env exec hermes hermes profile list
+docker compose --env-file .env exec hermes hermes status
 ```
 
 4. Check services and initialize the Hindsight bank:
@@ -126,7 +117,7 @@ Hermes Dashboard also requires auth before it will bind publicly. Generate a
 password hash:
 
 ```bash
-docker compose --env-file .env -f docker-compose.yml -f docker-compose.rootless.yml \
+docker compose --env-file .env \
   exec hermes python -c "from plugins.dashboard_auth.basic import hash_password; print(hash_password('your-password'))"
 ```
 
@@ -139,13 +130,10 @@ dashboard:
     password_hash: "paste-the-hash-here"
 ```
 
-Restart with the dashboard profile:
+Restart the stack:
 
 ```bash
-docker compose --env-file .env --profile dashboard --profile headroom \
-  -f docker-compose.yml \
-  -f docker-compose.rootless.yml \
-  up -d --force-recreate
+docker compose --env-file .env up -d --force-recreate
 ```
 
 Use the server LAN IP, for example from `ip route get 1.1.1.1`:
@@ -171,6 +159,7 @@ Use this when Docker runs normally with the host socket at `/var/run/docker.sock
 cp .env.example .env
 sed -i "s/^HERMES_UID=.*/HERMES_UID=$(id -u)/" .env
 sed -i "s/^HERMES_GID=.*/HERMES_GID=$(id -g)/" .env
+sed -i "s|^DOCKER_SOCK=.*|DOCKER_SOCK=/var/run/docker.sock|" .env
 test -S /var/run/docker.sock
 mkdir -p appdata/hermes appdata/hindsight appdata/headroom appdata/firecrawl-redis appdata/firecrawl-rabbitmq appdata/firecrawl-postgres
 cp hermes-data/.env.example appdata/hermes/.env
@@ -202,15 +191,15 @@ If Hermes Agent itself should use LM Studio, set `LM_BASE_URL` in
 3. Validate and start the stack:
 
 ```bash
-docker compose --env-file .env --profile headroom config
-docker compose --env-file .env --profile headroom up -d
+docker compose --env-file .env -f docker-compose.yml -f docker-compose.rootful.yml config
+docker compose --env-file .env -f docker-compose.yml -f docker-compose.rootful.yml up -d
 ```
 
 Confirm Hermes is using the named profile:
 
 ```bash
-docker compose --env-file .env exec hermes hermes profile list
-docker compose --env-file .env exec hermes hermes status
+docker compose --env-file .env -f docker-compose.yml -f docker-compose.rootful.yml exec hermes hermes profile list
+docker compose --env-file .env -f docker-compose.yml -f docker-compose.rootful.yml exec hermes hermes status
 ```
 
 4. Check services and initialize the Hindsight bank:

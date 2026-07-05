@@ -2,14 +2,13 @@
 
 ## Project Structure & Module Organization
 
-This repository is a Docker Compose bundle for running Hermes Agent with Hindsight MCP, Headroom MCP, and Firecrawl/SearXNG/Camofox web sidecars. The main stack is `docker-compose.yml`; use `docker-compose.rootless.yml` as an override for rootless Docker deployments. Tracked Hermes seed configuration lives under `hermes-data/`: `config.rootless.yaml`, `config.rootful.yaml`, and `profile-templates/`. Writable Hermes runtime state lives under ignored `appdata/hermes/`, including local `config.yaml` and generated profiles. Web-search templates live in `web-search/`; generated `web-search/searxng-settings.yml` and `.firecrawl-src/` are ignored. Helper scripts are in `scripts/`. Keep secrets in local `.env` files copied from `.env.example` files, not in committed YAML.
+This repository is a rootless-first Docker Compose bundle for running Hermes Agent with Hindsight MCP, Headroom MCP, and Firecrawl/SearXNG/Camofox web sidecars. The main stack is `docker-compose.yml`; use `docker-compose.rootful.yml` as an override only for rootful Docker deployments. Tracked Hermes seed configuration lives under `hermes-data/`: `config.rootless.yaml`, `config.rootful.yaml`, and `profile-templates/`. Writable Hermes runtime state lives under ignored `appdata/hermes/`, including local `config.yaml` and generated profiles. Web-search templates live in `web-search/`; generated `web-search/searxng-settings.yml` and `.firecrawl-src/` are ignored. Helper scripts are in `scripts/`. Keep secrets in local `.env` files copied from `.env.example` files, not in committed YAML.
 
 ## Build, Test, and Development Commands
 
-- `docker compose --env-file .env config`: validate the rootful Compose configuration.
-- `docker compose --env-file .env --profile headroom up -d`: start Hermes, Hindsight, Headroom MCP plus proxy/stats, Firecrawl, SearXNG, and Camofox.
-- `docker compose --env-file .env --profile dashboard --profile headroom up -d`: include the Hermes dashboard service and Headroom stats proxy.
-- `docker compose --env-file .env --profile headroom -f docker-compose.yml -f docker-compose.rootless.yml config`: validate rootless mode with the Headroom stats proxy.
+- `docker compose --env-file .env config`: validate the default rootless Compose configuration.
+- `docker compose --env-file .env up -d`: start Hermes, the Hermes dashboard, Hindsight, Headroom MCP plus proxy/stats, Firecrawl, SearXNG, and Camofox.
+- `docker compose --env-file .env -f docker-compose.yml -f docker-compose.rootful.yml config`: validate rootful mode.
 - `./setup.sh`: run the guided local setup flow and print the matching Compose command.
 - `./reset.sh`: archive generated runtime state and prepare for a fresh `./setup.sh` run.
 - `./scripts/create-profile.sh research`: create a rootful profile using bank `hermes-research`.

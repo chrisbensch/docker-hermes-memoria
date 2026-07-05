@@ -4,7 +4,6 @@ services:
   hermes:
     image: ${HERMES_IMAGE:-nousresearch/hermes-agent:latest}
     restart: unless-stopped
-    network_mode: host
     depends_on:
       hindsight-mcp:
         condition: service_healthy
@@ -15,14 +14,19 @@ services:
     volumes:
       - ${APPDATA_DIR:-./appdata}/hermes:/opt/data
       - type: bind
-        source: /var/run/docker.sock
+        source: ${DOCKER_SOCK:-/run/user/1000/docker.sock}
         target: /var/run/docker.sock
         bind:
           create_host_path: false
+    ports:
+      # Only useful when you enable Hermes' API server with API_SERVER_KEY or
+      # API_SERVER_ENABLED. The API server defaults to container port 8642.
+      - "${HERMES_API_BIND_HOST:-127.0.0.1}:${HERMES_API_HOST_PORT:-8642}:8642"
     environment:
       HERMES_UID: ${HERMES_UID:-10000}
       HERMES_GID: ${HERMES_GID:-10000}
       HERMES_HOME_MODE: ${HERMES_HOME_MODE:-0755}
+      API_SERVER_HOST: ${API_SERVER_HOST:-0.0.0.0}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     command: ["gateway", "run"]
@@ -35,20 +39,19 @@ services:
   hermes-dashboard:
     image: ${HERMES_IMAGE:-nousresearch/hermes-agent:latest}
     restart: unless-stopped
-    network_mode: host
-    profiles:
-      - dashboard
     depends_on:
       - hermes
     volumes:
       - ${APPDATA_DIR:-./appdata}/hermes:/opt/data
+    ports:
+      - "${HERMES_DASHBOARD_BIND_HOST:-127.0.0.1}:${HERMES_DASHBOARD_HOST_PORT:-9119}:9119"
     environment:
       HERMES_UID: ${HERMES_UID:-10000}
       HERMES_GID: ${HERMES_GID:-10000}
       HERMES_HOME_MODE: ${HERMES_HOME_MODE:-0755}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    command: ["dashboard", "--host", "127.0.0.1", "--no-open"]
+    command: ["dashboard", "--host", "0.0.0.0", "--port", "9119", "--no-open"]
     logging:
       driver: json-file
       options:
@@ -89,8 +92,6 @@ services:
   headroom-proxy:
     image: ${HEADROOM_IMAGE:-ghcr.io/chopratejas/headroom:0.27.0}
     restart: unless-stopped
-    profiles:
-      - headroom
     ports:
       - "${HEADROOM_PROXY_BIND_HOST:-127.0.0.1}:${HEADROOM_PROXY_HOST_PORT:-8787}:8787"
     environment:
@@ -291,3 +292,7 @@ services:
       options:
         max-size: "10m"
         max-file: "5"
+
+networks:
+  default:
+    name: hermes-compose-mcp-rootless
