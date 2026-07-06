@@ -367,8 +367,10 @@ esac
 data_dir="$appdata_host_dir/hermes"
 hermes_env_file="$data_dir/.env"
 base_config="$data_dir/config.yaml"
+obsidian_vault_dir="$data_dir/obsidian-memory-vault"
 mkdir -p \
   "$data_dir" \
+  "$obsidian_vault_dir" \
   "$appdata_host_dir/hindsight" \
   "$appdata_host_dir/headroom" \
   "$appdata_host_dir/firecrawl-redis" \
@@ -386,6 +388,7 @@ if [ ! -f "$hermes_env_file" ]; then
 else
   backup_file "$hermes_env_file"
 fi
+set_env_var "$hermes_env_file" OBSIDIAN_VAULT_PATH /opt/data/obsidian-memory-vault
 if [ ! -f "$base_config" ]; then
   cp "$seed_config" "$base_config"
 else
@@ -493,7 +496,7 @@ chmod +x \
   "$script_dir/scripts/create-profile.sh" \
   "$script_dir/scripts/create-profile-rootless.sh" \
   "$script_dir/scripts/normalize-appdata-permissions.sh"
-HERMES_DATA_DIR="$data_dir" HERMES_APPDATA_DIR="$appdata_host_dir" HERMES_PROFILE_ACTIVATE=1 "$profile_script" "$profile_name" "$bank_id"
+HERMES_DATA_DIR="$data_dir" HERMES_APPDATA_DIR="$appdata_host_dir" HERMES_OBSIDIAN_VAULT_DIR="$obsidian_vault_dir" HERMES_PROFILE_ACTIVATE=1 "$profile_script" "$profile_name" "$bank_id"
 
 profile_config="$data_dir/profiles/$profile_name/config.yaml"
 backup_file "$profile_config"
@@ -515,6 +518,7 @@ set_env_var "$hermes_env_file" CAMOFOX_URL "$camofox_url"
 profile_env_file="$data_dir/profiles/$profile_name/.env"
 backup_file "$profile_env_file"
 set_env_var "$profile_env_file" HINDSIGHT_BANK_ID "$bank_id"
+set_env_var "$profile_env_file" OBSIDIAN_VAULT_PATH /opt/data/obsidian-memory-vault
 set_env_var "$profile_env_file" FIRECRAWL_API_URL "$firecrawl_api_url"
 set_env_var "$profile_env_file" CAMOFOX_URL "$camofox_url"
 
@@ -529,6 +533,7 @@ if prompt_yes_no 'Configure Hermes Agent runtime model now' y; then
       runtime_key=$(prompt_default 'Hermes LM Studio API key (blank is ok)' "$(get_env_value "$hermes_env_file" LM_API_KEY || true)")
       set_env_var "$hermes_env_file" LM_BASE_URL "$runtime_base"
       set_env_var "$hermes_env_file" LM_API_KEY "$runtime_key"
+      append_model_config "$base_config" lmstudio "$runtime_model" "$runtime_base"
       append_model_config "$profile_config" lmstudio "$runtime_model" "$runtime_base"
       ;;
     deepseek)
@@ -537,12 +542,14 @@ if prompt_yes_no 'Configure Hermes Agent runtime model now' y; then
       runtime_key=$(prompt_secret 'Hermes DeepSeek API key (blank to leave empty)')
       set_env_var "$hermes_env_file" DEEPSEEK_BASE_URL "$runtime_base"
       set_env_var "$hermes_env_file" DEEPSEEK_API_KEY "$runtime_key"
+      append_model_config "$base_config" deepseek "$runtime_model" ""
       append_model_config "$profile_config" deepseek "$runtime_model" ""
       ;;
     openai)
       runtime_model=$(prompt_default 'Hermes OpenAI model' gpt-4o-mini)
       runtime_key=$(prompt_secret 'Hermes OpenAI API key (blank to leave empty)')
       set_env_var "$hermes_env_file" OPENAI_API_KEY "$runtime_key"
+      append_model_config "$base_config" openai "$runtime_model" ""
       append_model_config "$profile_config" openai "$runtime_model" ""
       ;;
     *)
@@ -591,3 +598,4 @@ printf 'Useful URLs:\n'
 printf '  Hermes Dashboard:        http://%s:%s/login?next=%%2F\n' "$dashboard_host" "$(env_default "$env_file" HERMES_DASHBOARD_HOST_PORT 9119)"
 printf '  Hindsight Control Plane: http://%s:%s\n' "$hindsight_host" "$(env_default "$env_file" HINDSIGHT_UI_HOST_PORT 9999)"
 printf '  Headroom stats:          http://%s:%s/stats\n' "$headroom_host" "$(env_default "$env_file" HEADROOM_PROXY_HOST_PORT 8787)"
+printf '  Obsidian vault:          %s\n' "$obsidian_vault_dir"

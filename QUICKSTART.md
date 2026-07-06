@@ -35,7 +35,7 @@ Use this when Docker is running in rootless mode for your deployment user.
 cp .env.example .env
 sed -i "s|^DOCKER_SOCK=.*|DOCKER_SOCK=/run/user/$(id -u)/docker.sock|" .env
 test -S "/run/user/$(id -u)/docker.sock"
-mkdir -p appdata/hermes appdata/hindsight appdata/headroom appdata/firecrawl-redis appdata/firecrawl-rabbitmq appdata/firecrawl-postgres
+mkdir -p appdata/hermes/obsidian-memory-vault appdata/hindsight appdata/headroom appdata/firecrawl-redis appdata/firecrawl-rabbitmq appdata/firecrawl-postgres
 cp hermes-data/.env.example appdata/hermes/.env
 cp -n hermes-data/config.rootless.yaml appdata/hermes/config.yaml
 cp web-search/searxng-settings.template.yml web-search/searxng-settings.yml
@@ -47,8 +47,9 @@ git clone --depth 1 https://github.com/firecrawl/firecrawl.git .firecrawl-src
 Set `HINDSIGHT_API_LLM_*` in `.env` for Hindsight. Add Hermes runtime provider
 keys, such as `DEEPSEEK_API_KEY`, to `appdata/hermes/.env` if needed.
 For rootless web access, also set `FIRECRAWL_API_URL=http://firecrawl-api:3002`
-and `CAMOFOX_URL=http://camofox:9377` in `appdata/hermes/.env`. `./setup.sh` does
-this automatically.
+and `CAMOFOX_URL=http://camofox:9377` in `appdata/hermes/.env`. Also set
+`OBSIDIAN_VAULT_PATH=/opt/data/obsidian-memory-vault`. `./setup.sh` does this
+automatically.
 If the socket check fails, start rootless Docker for this user or set
 `DOCKER_SOCK` to the actual socket before continuing.
 
@@ -165,7 +166,7 @@ sed -i "s/^HERMES_UID=.*/HERMES_UID=$(id -u)/" .env
 sed -i "s/^HERMES_GID=.*/HERMES_GID=$(id -g)/" .env
 sed -i "s|^DOCKER_SOCK=.*|DOCKER_SOCK=/var/run/docker.sock|" .env
 test -S /var/run/docker.sock
-mkdir -p appdata/hermes appdata/hindsight appdata/headroom appdata/firecrawl-redis appdata/firecrawl-rabbitmq appdata/firecrawl-postgres
+mkdir -p appdata/hermes/obsidian-memory-vault appdata/hindsight appdata/headroom appdata/firecrawl-redis appdata/firecrawl-rabbitmq appdata/firecrawl-postgres
 cp hermes-data/.env.example appdata/hermes/.env
 cp -n hermes-data/config.rootful.yaml appdata/hermes/config.yaml
 cp web-search/searxng-settings.template.yml web-search/searxng-settings.yml
@@ -175,8 +176,9 @@ git clone --depth 1 https://github.com/firecrawl/firecrawl.git .firecrawl-src
 ```
 
 For rootful web access, set `FIRECRAWL_API_URL=http://127.0.0.1:3002` and
-`CAMOFOX_URL=http://127.0.0.1:9377` in `appdata/hermes/.env`. `./setup.sh` does
-this automatically.
+`CAMOFOX_URL=http://127.0.0.1:9377` in `appdata/hermes/.env`. Also set
+`OBSIDIAN_VAULT_PATH=/opt/data/obsidian-memory-vault`. `./setup.sh` does this
+automatically.
 
 2. Create the rootful profile. The first profile created becomes the active
 Hermes profile by writing `appdata/hermes/active_profile` and seeding gateway state

@@ -11,6 +11,7 @@
 #   default: your-local-model
 #   base_url: http://127.0.0.1:1234/v1
 
-# Keep the base profile blank. The quickstart-created profile becomes active
-# through appdata/hermes/active_profile and owns its Hindsight/Headroom config.
+# Keep MCP wiring in named profiles. The dashboard may still consult the base
+# profile for model settings, so setup.sh mirrors the selected runtime model
+# here while each named profile owns its Hindsight/Headroom config.
 mcp_servers: {}

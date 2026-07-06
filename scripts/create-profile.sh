@@ -49,6 +49,7 @@ case "$data_dir" in
   *) data_dir="$stack_dir/$data_dir" ;;
 esac
 template_dir="$stack_dir/hermes-data/profile-templates/$template_name"
+profile_override_dir="$stack_dir/hermes-data/profile-overrides/$profile_name"
 profile_dir="$data_dir/profiles/$profile_name"
 active_profile_file="$data_dir/active_profile"
 appdata_dir=${HERMES_APPDATA_DIR:-$stack_dir/appdata}
@@ -56,6 +57,12 @@ case "$appdata_dir" in
   /*) ;;
   *) appdata_dir="$stack_dir/$appdata_dir" ;;
 esac
+obsidian_vault_dir=${HERMES_OBSIDIAN_VAULT_DIR:-$data_dir/obsidian-memory-vault}
+case "$obsidian_vault_dir" in
+  /*) ;;
+  *) obsidian_vault_dir="$stack_dir/$obsidian_vault_dir" ;;
+esac
+container_obsidian_vault_dir=${HERMES_CONTAINER_OBSIDIAN_VAULT_DIR:-/opt/data/obsidian-memory-vault}
 hindsight_mcp_base=${HERMES_HINDSIGHT_MCP_BASE:-http://127.0.0.1:8888/mcp}
 hindsight_api_base=${HERMES_HINDSIGHT_API_BASE:-http://127.0.0.1:8888}
 init_hindsight_bank=${HERMES_CREATE_HINDSIGHT_BANK:-1}
@@ -68,12 +75,125 @@ if [ ! -d "$template_dir" ]; then
   exit 1
 fi
 
+soul_template="$template_dir/SOUL.md"
+if [ -f "$profile_override_dir/SOUL.md" ]; then
+  soul_template="$profile_override_dir/SOUL.md"
+fi
+
 render_template() {
   sed \
     -e "s/__PROFILE__/$profile_name/g" \
     -e "s/__BANK_ID__/$bank_id/g" \
     -e "s|__APPDATA_DIR__|$appdata_dir|g" \
+    -e "s|__OBSIDIAN_VAULT_PATH__|$container_obsidian_vault_dir|g" \
     "$1" > "$2"
+}
+
+write_if_missing() {
+  file=$1
+  shift
+  [ ! -e "$file" ] || return 0
+  {
+    for line in "$@"; do
+      printf '%s\n' "$line"
+    done
+  } > "$file"
+}
+
+ensure_obsidian_vault() {
+  vault_dir=$1
+  profile=$2
+
+  mkdir -p \
+    "$vault_dir/Profiles/$profile" \
+    "$vault_dir/Shared" \
+    "$vault_dir/Templates"
+
+  write_if_missing "$vault_dir/README.md" \
+    '# Hermes Obsidian Memory Vault' \
+    '' \
+    'This vault is shared by Hermes profiles for durable, file-based knowledge.' \
+    'Keep profile-specific notes under `Profiles/<profile>/` and shared stack notes under `Shared/`.'
+
+  write_if_missing "$vault_dir/Profiles/$profile/Index.md" \
+    '---' \
+    "profile: $profile" \
+    'kind: profile-index' \
+    '---' \
+    '' \
+    "# $profile Profile Index" \
+    '' \
+    'Use this note as the entry point for durable profile knowledge, research logs, and links into domain notes.'
+
+  write_if_missing "$vault_dir/Shared/Memory Architecture.md" \
+    '# Memory Architecture' \
+    '' \
+    '- Hermes native memory stores compact profile-local facts.' \
+    '- Hindsight stores deeper semantic memory in one bank per profile.' \
+    '- This Obsidian vault stores durable notes, indexes, logs, and cross-profile knowledge.' \
+    '- Headroom manages context compression and stats, not durable semantic memory.'
+
+  write_if_missing "$vault_dir/Templates/Daily Review.md" \
+    '---' \
+    'kind: daily-review' \
+    '---' \
+    '' \
+    '# Daily Review' \
+    '' \
+    '## Highlights' \
+    '' \
+    '## Follow-ups'
+}
+
+ensure_obsidian_vault_in_container() {
+  container=$1
+  profile=$2
+
+  docker exec "$container" sh -c '
+    set -eu
+    vault=$1
+    profile=$2
+    mkdir -p "$vault/Profiles/$profile" "$vault/Shared" "$vault/Templates"
+    write_if_missing() {
+      file=$1
+      shift
+      [ ! -e "$file" ] || return 0
+      for line in "$@"; do
+        printf "%s\n" "$line"
+      done > "$file"
+    }
+    write_if_missing "$vault/README.md" \
+      "# Hermes Obsidian Memory Vault" \
+      "" \
+      "This vault is shared by Hermes profiles for durable, file-based knowledge." \
+      "Keep profile-specific notes under \`Profiles/<profile>/\` and shared stack notes under \`Shared/\`."
+    write_if_missing "$vault/Profiles/$profile/Index.md" \
+      "---" \
+      "profile: $profile" \
+      "kind: profile-index" \
+      "---" \
+      "" \
+      "# $profile Profile Index" \
+      "" \
+      "Use this note as the entry point for durable profile knowledge, research logs, and links into domain notes."
+    write_if_missing "$vault/Shared/Memory Architecture.md" \
+      "# Memory Architecture" \
+      "" \
+      "- Hermes native memory stores compact profile-local facts." \
+      "- Hindsight stores deeper semantic memory in one bank per profile." \
+      "- This Obsidian vault stores durable notes, indexes, logs, and cross-profile knowledge." \
+      "- Headroom manages context compression and stats, not durable semantic memory."
+    write_if_missing "$vault/Templates/Daily Review.md" \
+      "---" \
+      "kind: daily-review" \
+      "---" \
+      "" \
+      "# Daily Review" \
+      "" \
+      "## Highlights" \
+      "" \
+      "## Follow-ups"
+  ' sh "$container_obsidian_vault_dir" "$profile"
 }
 
 write_gateway_state() {
@@ -116,6 +236,7 @@ print_summary() {
   printf 'Hindsight bank: %s (%s)\n' "$bank_id" "$bank_message"
   printf 'Hindsight MCP URL: %s/%s/\n' "$hindsight_mcp_base" "$bank_id"
   printf 'Headroom MCP: %s\n' "$headroom_mcp_description"
+  printf 'Obsidian profile index: %s/Profiles/%s/Index.md\n' "$obsidian_vault_dir" "$profile_name"
   if printf '%s' "$bank_message" | grep -q '^skipped;'; then
     printf 'Retry bank creation:\n'
     printf '  curl -fsS -X PUT "%s/v1/default/banks/%s" -H "content-type: application/json" -d '\''{}'\''\n' "$hindsight_api_base" "$bank_id"
@@ -150,7 +271,7 @@ create_profile_in_container() {
   ' sh "$container_profile_dir" "$container_data_dir/profiles"
 
   render_template "$template_dir/config.yaml" "$tmp_dir/config.yaml"
-  render_template "$template_dir/SOUL.md" "$tmp_dir/SOUL.md"
+  render_template "$soul_template" "$tmp_dir/SOUL.md"
   render_template "$template_dir/.env.example" "$tmp_dir/.env.example"
   render_template "$template_dir/README.md" "$tmp_dir/README.md"
 
@@ -174,6 +295,7 @@ create_profile_in_container() {
   copy_if_missing "$tmp_dir/SOUL.md" "$container_profile_dir/SOUL.md"
   copy_if_missing "$tmp_dir/.env.example" "$container_profile_dir/.env.example"
   copy_if_missing "$tmp_dir/README.md" "$container_profile_dir/README.md"
+  ensure_obsidian_vault_in_container "$container" "$profile_name"
 
   activate_profile_in_container() {
     timestamp=$(date +%s 2>/dev/null || printf '0')
@@ -221,6 +343,8 @@ if ! mkdir -p "$profile_dir" 2>/dev/null; then
   create_profile_in_container
 fi
 
+ensure_obsidian_vault "$obsidian_vault_dir" "$profile_name"
+
 if [ -e "$profile_dir/config.yaml" ]; then
   printf 'Keeping existing %s\n' "$profile_dir/config.yaml"
 else
@@ -231,7 +355,7 @@ fi
 if [ -e "$profile_dir/SOUL.md" ]; then
   printf 'Keeping existing %s\n' "$profile_dir/SOUL.md"
 else
-  render_template "$template_dir/SOUL.md" "$profile_dir/SOUL.md"
+  render_template "$soul_template" "$profile_dir/SOUL.md"
   printf 'Created %s\n' "$profile_dir/SOUL.md"
 fi
 

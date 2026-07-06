@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This repository is a rootless-first Docker Compose bundle for running Hermes Agent with Hindsight MCP, Headroom MCP, and Firecrawl/SearXNG/Camofox web sidecars. The main stack is `docker-compose.yml`; use `docker-compose.rootful.yml` as an override only for rootful Docker deployments. Tracked Hermes seed configuration lives under `hermes-data/`: `config.rootless.yaml`, `config.rootful.yaml`, and `profile-templates/`. Writable Hermes runtime state lives under ignored `appdata/hermes/`, including local `config.yaml` and generated profiles. Web-search templates live in `web-search/`; generated `web-search/searxng-settings.yml` and `.firecrawl-src/` are ignored. Helper scripts are in `scripts/`. Keep secrets in local `.env` files copied from `.env.example` files, not in committed YAML.
+This repository is a rootless-first Docker Compose bundle for running Hermes Agent with Hindsight MCP, Headroom MCP, and Firecrawl/SearXNG/Camofox web sidecars. The main stack is `docker-compose.yml`; use `docker-compose.rootful.yml` as an override only for rootful Docker deployments. Tracked Hermes seed configuration lives under `hermes-data/`: `config.rootless.yaml`, `config.rootful.yaml`, `profile-templates/`, and optional `profile-overrides/`. Writable Hermes runtime state lives under ignored `appdata/hermes/`, including local `config.yaml`, generated profiles, and the shared Obsidian vault at `appdata/hermes/obsidian-memory-vault/`. Web-search templates live in `web-search/`; generated `web-search/searxng-settings.yml` and `.firecrawl-src/` are ignored. Helper scripts are in `scripts/`. Keep secrets in local `.env` files copied from `.env.example` files, not in committed YAML.
 
 ## Build, Test, and Development Commands
 

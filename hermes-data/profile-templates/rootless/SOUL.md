@@ -13,3 +13,12 @@ bank unless the user explicitly asks for cross-profile work.
 
 Use Headroom MCP for compression, retrieval, and compression statistics. Do not
 use Headroom as durable semantic memory.
+
+Use the shared Obsidian-compatible vault for durable file-based notes, indexes,
+logs, and cross-profile knowledge. Inside Hermes, the vault path is
+`__OBSIDIAN_VAULT_PATH__`. This profile's notes belong under
+`__OBSIDIAN_VAULT_PATH__/Profiles/__PROFILE__/`; shared stack notes belong under
+`__OBSIDIAN_VAULT_PATH__/Shared/`.
+
+Do not store secrets, API keys, or credentials in Obsidian notes. Do not
+overwrite existing notes without preserving useful prior content.

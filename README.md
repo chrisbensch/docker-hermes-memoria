@@ -12,9 +12,11 @@ start fresh.
 - `docker-compose.rootful.yml` is an override for rootful Docker deployments.
 - `web-search/` contains tracked SearXNG/nginx templates; `web-search/searxng-settings.yml` is generated locally with a unique secret.
 - `appdata/` is generated locally and stores portable Hermes runtime data plus sidecar data for Hindsight, Headroom, Redis, RabbitMQ, and Firecrawl Postgres.
-- `appdata/hermes/config.yaml` is the writable runtime config mounted into Hermes as `/opt/data/config.yaml`.
-- `hermes-data/config.rootless.yaml` and `hermes-data/config.rootful.yaml` are blank base-profile seed configs for each deployment mode.
+- `appdata/hermes/obsidian-memory-vault/` is the shared Obsidian-compatible vault for durable notes across profiles; inside Hermes it is `/opt/data/obsidian-memory-vault`.
+- `appdata/hermes/config.yaml` is the writable base runtime config mounted into Hermes as `/opt/data/config.yaml`; `./setup.sh` mirrors the selected Hermes runtime model there for dashboard fallback paths.
+- `hermes-data/config.rootless.yaml` and `hermes-data/config.rootful.yaml` are minimal base-profile seed configs for each deployment mode.
 - `hermes-data/profile-templates/` contains the rootful and rootless templates used for new named profiles.
+- `hermes-data/profile-overrides/` contains optional per-profile template overrides, such as the research-specific `SOUL.md`.
 - `scripts/create-profile.sh` scaffolds additional profile directories with pinned Hindsight bank URLs and Headroom MCP config.
 - `scripts/create-profile-rootless.sh` does the same for rootless Docker, using Compose service names instead of host loopback.
 - `hermes-config-fragment.yaml` contains the web/browser and MCP blocks if you want to merge them into an existing config.
@@ -82,6 +84,7 @@ Native memory: /opt/data/profiles/research/state.db
 Session search: /opt/data/profiles/research/sessions/
 Hindsight bank: hermes-research
 Hindsight MCP:  http://hindsight-mcp:8888/mcp/hermes-research/
+Obsidian:       /opt/data/obsidian-memory-vault/Profiles/research/
 ```
 
 The intended order is:
@@ -89,7 +92,8 @@ The intended order is:
 1. Hermes built-in memory first for hot facts, stable user preferences, and small operational notes.
 2. Hermes session search for previous-conversation transcript recall.
 3. Hindsight for deeper semantic memory, reflection, graph-style recall, and durable knowledge that should outlive a single session.
-4. Headroom MCP for compression, retrieval, and compression statistics. Headroom is not the durable memory store.
+4. The shared Obsidian vault for durable notes, indexes, logs, and cross-profile knowledge.
+5. Headroom MCP for compression, retrieval, and compression statistics. Headroom is not the durable memory store.
 
 The Hindsight MCP URL is intentionally single-bank per profile. For profile
 `research` in the default rootless stack, use bank `hermes-research` and URL
@@ -103,6 +107,11 @@ The profile creation scripts create the matching Hindsight bank through
 `HERMES_CREATE_HINDSIGHT_BANK=0` to skip that step, or
 `HERMES_REQUIRE_HINDSIGHT_BANK=1` to make an unreachable Hindsight API fail the
 profile creation.
+
+The same scripts also create the shared Obsidian vault skeleton and a profile
+index at `appdata/hermes/obsidian-memory-vault/Profiles/<profile>/Index.md`.
+`./setup.sh` exports `OBSIDIAN_VAULT_PATH=/opt/data/obsidian-memory-vault` into
+the Hermes runtime env and the generated profile env.
 
 Compose service names are the stable names to use for internal addressing. Do
 not depend on generated container names or container IP addresses. In the
@@ -156,7 +165,7 @@ sed -i "s/^HERMES_UID=.*/HERMES_UID=$(id -u)/" .env
 sed -i "s/^HERMES_GID=.*/HERMES_GID=$(id -g)/" .env
 sed -i "s|^DOCKER_SOCK=.*|DOCKER_SOCK=/run/user/$(id -u)/docker.sock|" .env
 test -S "/run/user/$(id -u)/docker.sock"
-mkdir -p appdata/hermes appdata/hindsight appdata/headroom appdata/firecrawl-redis appdata/firecrawl-rabbitmq appdata/firecrawl-postgres
+mkdir -p appdata/hermes/obsidian-memory-vault appdata/hindsight appdata/headroom appdata/firecrawl-redis appdata/firecrawl-rabbitmq appdata/firecrawl-postgres
 cp -n hermes-data/config.rootless.yaml appdata/hermes/config.yaml
 cp web-search/searxng-settings.template.yml web-search/searxng-settings.yml
 secret=$(openssl rand -hex 32)
@@ -196,6 +205,7 @@ for `DEEPSEEK_API_KEY`, `LM_BASE_URL`, and `LM_API_KEY`.
 For web access in rootless mode, set:
 
 ```bash
+OBSIDIAN_VAULT_PATH=/opt/data/obsidian-memory-vault
 FIRECRAWL_API_URL=http://firecrawl-api:3002
 CAMOFOX_URL=http://camofox:9377
 ```
@@ -222,8 +232,9 @@ Hindsight bank. If Hindsight is not up yet, it prints the curl command to run
 after startup.
 
 Hindsight's `HINDSIGHT_API_LLM_*` values do not configure Hermes Agent's own
-chat model. To make Hermes use LM Studio, also set the runtime model in the
-active profile config, for example `appdata/hermes/profiles/research/config.yaml`:
+chat model. To make Hermes use LM Studio, set the runtime model in both the
+base config (`appdata/hermes/config.yaml`) and each active profile config, for
+example `appdata/hermes/profiles/research/config.yaml`:
 
 ```yaml
 model:
@@ -304,7 +315,7 @@ starting the stack.
 3. Seed the writable base config and create profiles with the rootless scaffold:
 
 ```bash
-mkdir -p appdata/hermes appdata/hindsight appdata/headroom appdata/firecrawl-redis appdata/firecrawl-rabbitmq appdata/firecrawl-postgres
+mkdir -p appdata/hermes/obsidian-memory-vault appdata/hindsight appdata/headroom appdata/firecrawl-redis appdata/firecrawl-rabbitmq appdata/firecrawl-postgres
 cp -n hermes-data/config.rootless.yaml appdata/hermes/config.yaml
 ./scripts/create-profile-rootless.sh research
 ```
@@ -452,8 +463,8 @@ configure those Hermes platforms to bind `0.0.0.0` inside the container.
 - If you need to create, inspect, or delete banks manually, temporarily enable the commented `hindsight_admin` MCP server in the relevant profile config. Keep it disabled during normal profile use.
 - If you change `HEADROOM_PROXY_HOST_PORT`, update the matching `HEADROOM_PROXY_URL` in each profile config or template that should use it.
 - If you change `HEADROOM_IMAGE`, update the same image string in each profile config or template unless your Hermes config supports environment interpolation.
-- Keep `hermes-data/config.rootless.yaml` and `hermes-data/config.rootful.yaml` as reusable blank base-profile seed configs. Make day-to-day agent setup changes in the active profile config under `appdata/hermes/profiles/<name>/config.yaml`.
-- Hermes still exposes `default` as its built-in base `HERMES_HOME`; this stack keeps that base blank and makes the quickstart-created named profile active.
+- Keep `hermes-data/config.rootless.yaml` and `hermes-data/config.rootful.yaml` as reusable base-profile seed configs. Make Hindsight, Headroom, and profile-specific agent setup changes in the active profile config under `appdata/hermes/profiles/<name>/config.yaml`.
+- Hermes still exposes `default` as its built-in base `HERMES_HOME`; this stack makes the quickstart-created named profile active, but mirrors the selected runtime model into the base config because some dashboard model/session routes are not fully profile-scoped.
 - Headroom's upstream Compose stack also includes Qdrant and Neo4j for memory-oriented features. This bundle keeps the base stack lean; add those services later if you enable Headroom features that require them.
 - Do not run a separate host-installed Hermes against the same `appdata/hermes` directory.
 - Do not point two Hermes containers at the same `appdata/hermes` directory simultaneously.
