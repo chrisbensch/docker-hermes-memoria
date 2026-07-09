@@ -5,6 +5,7 @@ docker-agent-web/
 appdata/
 web-search/searxng-settings.yml
 reset-backups/
+migration-inventory/
 hermes-data/.cache/
 hermes-data/.env
 hermes-data/.env.bak-*
