@@ -288,28 +288,11 @@ prepare_rootless_hindsight_dir() {
 }
 
 default_lm_base_url() {
-  mode=$1
-  case "$mode" in
-    rootful) printf 'http://127.0.0.1:1234/v1\n' ;;
-    *) printf 'http://host.docker.internal:1234/v1\n' ;;
-  esac
+  printf 'http://host.docker.internal:1234/v1\n'
 }
 
 printf '\nHermes Compose setup\n'
-printf 'This writes .env files, creates a named profile, and prints the Compose command.\n\n'
-
-default_mode=rootless
-if [ ! -S "/run/user/$(id -u)/docker.sock" ] && [ -S /var/run/docker.sock ]; then
-  default_mode=rootful
-fi
-
-while :; do
-  mode=$(prompt_default 'Deployment mode (rootless/rootful)' "$default_mode")
-  case "$mode" in
-    rootless|rootful) break ;;
-    *) printf 'Use rootless or rootful.\n' >&2 ;;
-  esac
-done
+printf 'This writes rootless .env files, creates a named profile, and prints the Compose command.\n\n'
 
 default_appdata_dir=$(env_default "$env_file" APPDATA_DIR ./appdata)
 case "$default_appdata_dir" in
@@ -330,18 +313,9 @@ bank_id=$(prompt_default 'Hindsight bank ID' "hermes-$profile_name")
 uid_value=$(prompt_default 'Host UID for appdata ownership' "$(id -u)")
 gid_value=$(prompt_default 'Host GID for appdata ownership' "$(id -g)")
 
-case "$mode" in
-  rootless)
-    socket_default="/run/user/$(id -u)/docker.sock"
-    seed_config="$seed_dir/config.rootless.yaml"
-    profile_script="$script_dir/scripts/create-profile-rootless.sh"
-    ;;
-  rootful)
-    socket_default=/var/run/docker.sock
-    seed_config="$seed_dir/config.rootful.yaml"
-    profile_script="$script_dir/scripts/create-profile.sh"
-    ;;
-esac
+socket_default="/run/user/$(id -u)/docker.sock"
+seed_config="$seed_dir/config.rootless.yaml"
+profile_script="$script_dir/scripts/create-profile.sh"
 
 docker_socket=$(prompt_default 'Docker socket to mount for Headroom MCP' "$socket_default")
 if [ ! -S "$docker_socket" ]; then
@@ -379,9 +353,7 @@ mkdir -p \
 
 hindsight_image=$(env_default "$env_file" HINDSIGHT_IMAGE ghcr.io/vectorize-io/hindsight:latest)
 set_env_var "$env_file" HINDSIGHT_IMAGE "$hindsight_image"
-if [ "$mode" = rootless ]; then
-  prepare_rootless_hindsight_dir "$hindsight_image" "$appdata_host_dir/hindsight"
-fi
+prepare_rootless_hindsight_dir "$hindsight_image" "$appdata_host_dir/hindsight"
 
 if [ ! -f "$hermes_env_file" ]; then
   cp "$hermes_env_example" "$hermes_env_file"
@@ -427,7 +399,7 @@ hindsight_provider=$(prompt_default 'Hindsight LLM provider (lmstudio/deepseek/o
 case "$hindsight_provider" in
   lmstudio)
     hindsight_model=$(prompt_default 'Hindsight LM Studio model' "$(env_default "$env_file" HINDSIGHT_API_LLM_MODEL your-local-model)")
-    hindsight_base=$(prompt_default 'Hindsight LM Studio base URL' "$(env_default "$env_file" HINDSIGHT_API_LLM_BASE_URL "$(default_lm_base_url "$mode")")")
+    hindsight_base=$(prompt_default 'Hindsight LM Studio base URL' "$(env_default "$env_file" HINDSIGHT_API_LLM_BASE_URL "$(default_lm_base_url)")")
     hindsight_key=$(prompt_default 'Hindsight LM Studio API key (blank is ok)' "$(get_env_value "$env_file" HINDSIGHT_API_LLM_API_KEY || true)")
     ;;
   deepseek)
@@ -501,16 +473,8 @@ HERMES_DATA_DIR="$data_dir" HERMES_APPDATA_DIR="$appdata_host_dir" HERMES_OBSIDI
 profile_config="$data_dir/profiles/$profile_name/config.yaml"
 backup_file "$profile_config"
 
-case "$mode" in
-  rootless)
-    firecrawl_api_url=http://firecrawl-api:3002
-    camofox_url=http://camofox:9377
-    ;;
-  rootful)
-    firecrawl_api_url="http://127.0.0.1:$(env_default "$env_file" FIRECRAWL_HOST_PORT 3002)"
-    camofox_url="http://127.0.0.1:$(env_default "$env_file" CAMOFOX_HOST_PORT 9377)"
-    ;;
-esac
+firecrawl_api_url=http://firecrawl-api:3002
+camofox_url=http://camofox:9377
 
 set_env_var "$hermes_env_file" FIRECRAWL_API_URL "$firecrawl_api_url"
 set_env_var "$hermes_env_file" CAMOFOX_URL "$camofox_url"
@@ -529,7 +493,7 @@ if prompt_yes_no 'Configure Hermes Agent runtime model now' y; then
   case "$runtime_provider" in
     lmstudio)
       runtime_model=$(prompt_default 'Hermes LM Studio model' "$hindsight_model")
-      runtime_base=$(prompt_default 'Hermes LM Studio base URL' "$(default_lm_base_url "$mode")")
+      runtime_base=$(prompt_default 'Hermes LM Studio base URL' "$(default_lm_base_url)")
       runtime_key=$(prompt_default 'Hermes LM Studio API key (blank is ok)' "$(get_env_value "$hermes_env_file" LM_API_KEY || true)")
       set_env_var "$hermes_env_file" LM_BASE_URL "$runtime_base"
       set_env_var "$hermes_env_file" LM_API_KEY "$runtime_key"
@@ -559,11 +523,7 @@ if prompt_yes_no 'Configure Hermes Agent runtime model now' y; then
   esac
 fi
 
-if [ "$mode" = rootless ]; then
-  compose_cmd='docker compose --env-file .env'
-else
-  compose_cmd='docker compose --env-file .env -f docker-compose.yml -f docker-compose.rootful.yml'
-fi
+compose_cmd='docker compose --env-file .env'
 
 server_ip=$(ip route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") {print $(i + 1); exit}}' || true)
 [ -n "$server_ip" ] || server_ip='<server-ip>'
@@ -582,10 +542,8 @@ printf 'Validate the Compose file:\n'
 printf '  %s config\n\n' "$compose_cmd"
 printf 'Bring the stack up:\n'
 printf '  %s up -d\n\n' "$compose_cmd"
-if [ "$mode" = rootless ]; then
-  printf 'Normalize rootless appdata permissions after the containers create their state:\n'
-  printf '  ./scripts/normalize-appdata-permissions.sh\n\n'
-fi
+printf 'Normalize rootless appdata permissions after the containers create their state:\n'
+printf '  ./scripts/normalize-appdata-permissions.sh\n\n'
 printf 'Initialize the Hindsight bank after the stack is healthy:\n'
 printf '  curl -fsS -X PUT "http://127.0.0.1:8888/v1/default/banks/%s" -H "content-type: application/json" -d '\''{}'\''\n\n' "$bank_id"
 printf 'Check the integrated web stack after startup:\n'

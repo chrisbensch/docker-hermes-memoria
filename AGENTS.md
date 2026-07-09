@@ -2,17 +2,16 @@
 
 ## Project Structure & Module Organization
 
-This repository is a rootless-first Docker Compose bundle for running Hermes Agent with Hindsight MCP, Headroom MCP, and Firecrawl/SearXNG/Camofox web sidecars. The main stack is `docker-compose.yml`; use `docker-compose.rootful.yml` as an override only for rootful Docker deployments. Tracked Hermes seed configuration lives under `hermes-data/`: `config.rootless.yaml`, `config.rootful.yaml`, `profile-templates/`, and optional `profile-overrides/`. Writable Hermes runtime state lives under ignored `appdata/hermes/`, including local `config.yaml`, generated profiles, and the shared Obsidian vault at `appdata/hermes/obsidian-memory-vault/`. Web-search templates live in `web-search/`; generated `web-search/searxng-settings.yml` and `.firecrawl-src/` are ignored. Helper scripts are in `scripts/`. Keep secrets in local `.env` files copied from `.env.example` files, not in committed YAML.
+This repository is a rootless Docker Compose bundle for running Hermes Agent with Hindsight MCP, Headroom MCP, and Firecrawl/SearXNG/Camofox web sidecars. The main stack is `docker-compose.yml`. Tracked Hermes seed configuration lives under `hermes-data/`: `config.rootless.yaml`, `profile-templates/`, and optional `profile-overrides/`. Use `hermes-data/profile-overrides/_TEMPLATE/SOUL.md` when migrating reusable profile SOUL files, preserving role/workflow instructions while replacing deployment-specific paths with placeholders. Writable Hermes runtime state lives under ignored `appdata/hermes/`, including local `config.yaml`, generated profiles, and the shared Obsidian vault at `appdata/hermes/obsidian-memory-vault/`. Web-search templates live in `web-search/`; generated `web-search/searxng-settings.yml` and `.firecrawl-src/` are ignored. Helper scripts are in `scripts/`. Keep secrets in local `.env` files copied from `.env.example` files, not in committed YAML.
 
 ## Build, Test, and Development Commands
 
 - `docker compose --env-file .env config`: validate the default rootless Compose configuration.
 - `docker compose --env-file .env up -d`: start Hermes, the Hermes dashboard, Hindsight, Headroom MCP plus proxy/stats, Firecrawl, SearXNG, and Camofox.
-- `docker compose --env-file .env -f docker-compose.yml -f docker-compose.rootful.yml config`: validate rootful mode.
 - `./setup.sh`: run the guided local setup flow and print the matching Compose command.
 - `./reset.sh`: archive generated runtime state and prepare for a fresh `./setup.sh` run.
-- `./scripts/create-profile.sh research`: create a rootful profile using bank `hermes-research`.
-- `./scripts/create-profile-rootless.sh research`: create a rootless profile using service-name MCP URLs.
+- `./scripts/create-profile.sh research`: create a rootless profile using bank `hermes-research` and service-name MCP URLs.
+- `./scripts/create-profile-rootless.sh research`: compatibility wrapper for the same rootless profile scaffold.
 - `curl -fsS http://127.0.0.1:8888/health`, `curl -fsS http://127.0.0.1:8787/readyz`, and `curl -fsS http://127.0.0.1:3002/v0/health/liveness`: check core sidecar health.
 
 ## Coding Style & Naming Conventions

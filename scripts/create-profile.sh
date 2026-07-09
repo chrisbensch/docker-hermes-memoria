@@ -42,7 +42,7 @@ esac
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 stack_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
-template_name=${HERMES_PROFILE_TEMPLATE:-rootful}
+template_name=${HERMES_PROFILE_TEMPLATE:-rootless}
 data_dir=${HERMES_DATA_DIR:-$stack_dir/appdata/hermes}
 case "$data_dir" in
   /*) ;;
@@ -63,11 +63,11 @@ case "$obsidian_vault_dir" in
   *) obsidian_vault_dir="$stack_dir/$obsidian_vault_dir" ;;
 esac
 container_obsidian_vault_dir=${HERMES_CONTAINER_OBSIDIAN_VAULT_DIR:-/opt/data/obsidian-memory-vault}
-hindsight_mcp_base=${HERMES_HINDSIGHT_MCP_BASE:-http://127.0.0.1:8888/mcp}
+hindsight_mcp_base=${HERMES_HINDSIGHT_MCP_BASE:-http://hindsight-mcp:8888/mcp}
 hindsight_api_base=${HERMES_HINDSIGHT_API_BASE:-http://127.0.0.1:8888}
 init_hindsight_bank=${HERMES_CREATE_HINDSIGHT_BANK:-1}
 require_hindsight_bank=${HERMES_REQUIRE_HINDSIGHT_BANK:-0}
-headroom_mcp_description=${HERMES_HEADROOM_MCP_DESCRIPTION:-docker-backed stdio server using ghcr.io/chopratejas/headroom:0.27.0}
+headroom_mcp_description=${HERMES_HEADROOM_MCP_DESCRIPTION:-docker-backed stdio server joined to hermes-compose-mcp-rootless}
 activate_profile=${HERMES_PROFILE_ACTIVATE:-auto}
 
 if [ ! -d "$template_dir" ]; then

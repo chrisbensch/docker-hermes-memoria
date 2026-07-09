@@ -2,7 +2,7 @@
 #
 # In rootless mode Hermes runs on the Compose bridge network, so MCP URLs use
 # Compose service names instead of 127.0.0.1. Profile-specific MCP wiring is
-# generated under appdata/hermes/profiles/<name>/ by create-profile-rootless.sh.
+# generated under appdata/hermes/profiles/<name>/ by create-profile.sh.
 
 # Optional Hermes runtime model. Hindsight has separate HINDSIGHT_API_LLM_*
 # settings in the Compose .env file; this block controls Hermes Agent itself.

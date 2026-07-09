@@ -8,17 +8,16 @@ start fresh.
 
 ## Layout
 
-- `docker-compose.yml` runs the rootless-first Hermes Agent, Hindsight, Headroom, and integrated Firecrawl/SearXNG/Camofox web access suite.
-- `docker-compose.rootful.yml` is an override for rootful Docker deployments.
+- `docker-compose.yml` runs the rootless Hermes Agent, Hindsight, Headroom, and integrated Firecrawl/SearXNG/Camofox web access suite.
 - `web-search/` contains tracked SearXNG/nginx templates; `web-search/searxng-settings.yml` is generated locally with a unique secret.
 - `appdata/` is generated locally and stores portable Hermes runtime data plus sidecar data for Hindsight, Headroom, Redis, RabbitMQ, and Firecrawl Postgres.
 - `appdata/hermes/obsidian-memory-vault/` is the shared Obsidian-compatible vault for durable notes across profiles; inside Hermes it is `/opt/data/obsidian-memory-vault`.
 - `appdata/hermes/config.yaml` is the writable base runtime config mounted into Hermes as `/opt/data/config.yaml`; `./setup.sh` mirrors the selected Hermes runtime model there for dashboard fallback paths.
-- `hermes-data/config.rootless.yaml` and `hermes-data/config.rootful.yaml` are minimal base-profile seed configs for each deployment mode.
-- `hermes-data/profile-templates/` contains the rootful and rootless templates used for new named profiles.
-- `hermes-data/profile-overrides/` contains optional per-profile template overrides, such as the research-specific `SOUL.md`.
-- `scripts/create-profile.sh` scaffolds additional profile directories with pinned Hindsight bank URLs and Headroom MCP config.
-- `scripts/create-profile-rootless.sh` does the same for rootless Docker, using Compose service names instead of host loopback.
+- `hermes-data/config.rootless.yaml` is the minimal base-profile seed config.
+- `hermes-data/profile-templates/` contains the rootless template used for new named profiles.
+- `hermes-data/profile-overrides/` contains optional per-profile template overrides, such as the research-specific `SOUL.md`; start new migrations from `hermes-data/profile-overrides/_TEMPLATE/SOUL.md`.
+- `scripts/create-profile.sh` scaffolds additional rootless profile directories with pinned Hindsight bank URLs and Headroom MCP config.
+- `scripts/create-profile-rootless.sh` is a compatibility wrapper for the same rootless profile scaffold.
 - `hermes-config-fragment.yaml` contains the web/browser and MCP blocks if you want to merge them into an existing config.
 - `.env.example` contains Compose-level settings such as image names and ports.
 - `hermes-data/.env.example` is copied to `appdata/hermes/.env` for Hermes runtime provider secrets.
@@ -63,10 +62,8 @@ Compose project:
 - Generated SearXNG settings: `web-search/searxng-settings.yml`, ignored by Git
 - Hermes runtime and sidecar data: `appdata/`, ignored by Git
 
-Rootless Hermes reaches Firecrawl and Camofox on the Compose network as
-`http://firecrawl-api:3002` and `http://camofox:9377`. The optional rootful
-override switches Hermes back to host networking, where it uses host loopback
-addresses such as `http://127.0.0.1:3002`.
+Hermes reaches Firecrawl and Camofox on the Compose network as
+`http://firecrawl-api:3002` and `http://camofox:9377`.
 
 In rootless Docker, `./setup.sh` prepares `appdata/hindsight` ownership through
 a short one-off container so Hindsight's unprivileged UID can write its embedded
@@ -96,11 +93,10 @@ The intended order is:
 5. Headroom MCP for compression, retrieval, and compression statistics. Headroom is not the durable memory store.
 
 The Hindsight MCP URL is intentionally single-bank per profile. For profile
-`research` in the default rootless stack, use bank `hermes-research` and URL
+`research`, use bank `hermes-research` and URL
 `http://hindsight-mcp:8888/mcp/hermes-research/`. This keeps profile memories
 from mixing unless you deliberately enable the commented multi-bank admin
-endpoint. In rootful host-network mode, the equivalent URL is
-`http://127.0.0.1:8888/mcp/hermes-research/`.
+endpoint.
 
 The profile creation scripts create the matching Hindsight bank through
 `http://127.0.0.1:8888` when the Hindsight API is reachable. Set
@@ -113,12 +109,30 @@ index at `appdata/hermes/obsidian-memory-vault/Profiles/<profile>/Index.md`.
 `./setup.sh` exports `OBSIDIAN_VAULT_PATH=/opt/data/obsidian-memory-vault` into
 the Hermes runtime env and the generated profile env.
 
+## Reusable Profile SOULs
+
+When migrating a `SOUL.md` from another Hermes install, keep the profile's role,
+workflow, style, tool preferences, and guardrails, but replace deployment
+details with render placeholders:
+
+```text
+__PROFILE__
+__BANK_ID__
+__OBSIDIAN_VAULT_PATH__
+```
+
+Use `hermes-data/profile-overrides/_TEMPLATE/SOUL.md` as the starting point for
+new overrides. Put the finished file at
+`hermes-data/profile-overrides/<profile>/SOUL.md`; `scripts/create-profile.sh`
+uses that override automatically when creating the matching profile.
+
+Do not carry over machine-specific paths such as `/home/hermes/Memory_Vault`,
+hardcoded Hindsight bank names, or secrets from another deployment. See
+`hermes-data/profile-overrides/README.md` for the migration checklist.
+
 Compose service names are the stable names to use for internal addressing. Do
-not depend on generated container names or container IP addresses. In the
-default rootless mode, use service names such as `hindsight-mcp`,
-`headroom-proxy`, `firecrawl-api`, and `camofox`; in rootful host-network mode,
-Hermes uses host loopback addresses because it is not attached to the Compose
-bridge network.
+not depend on generated container names or container IP addresses. Use service
+names such as `hindsight-mcp`, `headroom-proxy`, `firecrawl-api`, and `camofox`.
 
 ## Fresh Ubuntu Setup
 
@@ -130,7 +144,7 @@ For guided setup, run:
 ./setup.sh
 ```
 
-The script prompts for Docker mode, profile name, provider settings, UI exposure,
+The script prompts for profile name, provider settings, UI exposure,
 generates web-search secrets, clones the Firecrawl build source, configures
 Hermes to use Firecrawl/Camofox, and prints the Compose command to run. Use the
 manual steps below when you want to edit each file yourself.
@@ -223,8 +237,8 @@ Hermes for the base home and should not be used as a profile name. The default
 bank name is `hermes-<profile>` and Headroom MCP is included automatically:
 
 ```bash
-./scripts/create-profile-rootless.sh research
-./scripts/create-profile-rootless.sh coder hermes-coder
+./scripts/create-profile.sh research
+./scripts/create-profile.sh coder hermes-coder
 ```
 
 When Hindsight is already running, the script also creates each matching
@@ -312,12 +326,12 @@ If that socket check fails, your shell is not using a rootless Docker daemon for
 this user; start rootless Docker or set `DOCKER_SOCK` to the real socket before
 starting the stack.
 
-3. Seed the writable base config and create profiles with the rootless scaffold:
+3. Seed the writable base config and create profiles:
 
 ```bash
 mkdir -p appdata/hermes/obsidian-memory-vault appdata/hindsight appdata/headroom appdata/firecrawl-redis appdata/firecrawl-rabbitmq appdata/firecrawl-postgres
 cp -n hermes-data/config.rootless.yaml appdata/hermes/config.yaml
-./scripts/create-profile-rootless.sh research
+./scripts/create-profile.sh research
 ```
 
 The scaffold writes `research` to `appdata/hermes/active_profile` and seeds gateway
@@ -335,16 +349,14 @@ http://hindsight-mcp:8888/mcp/hermes-research/
 docker exec -i hermes-headroom-mcp headroom mcp serve
 ```
 
-Do not reuse configs generated by `create-profile.sh` for rootless profiles
-unless you replace their `127.0.0.1` MCP URLs with Compose service names.
-For rootless web access, set these in `appdata/hermes/.env`:
+For web access, set these in `appdata/hermes/.env`:
 
 ```bash
 FIRECRAWL_API_URL=http://firecrawl-api:3002
 CAMOFOX_URL=http://camofox:9377
 ```
 
-4. Validate and start the rootless stack:
+4. Validate and start the stack:
 
 ```bash
 docker compose --env-file .env config
@@ -381,33 +393,6 @@ curl -fsS -X PUT "http://127.0.0.1:8888/v1/default/banks/hermes-research" \
 
 The dashboard is published on host loopback at
 `http://127.0.0.1:${HERMES_DASHBOARD_HOST_PORT:-9119}`.
-
-## Rootful Docker Setup
-
-Use this only as a compatibility fallback when Docker runs with the host socket
-at `/var/run/docker.sock` and you want Hermes on host networking.
-
-Seed the rootful base config and create profiles with the rootful scaffold:
-
-```bash
-sed -i "s|^DOCKER_SOCK=.*|DOCKER_SOCK=/var/run/docker.sock|" .env
-cp -n hermes-data/config.rootful.yaml appdata/hermes/config.yaml
-./scripts/create-profile.sh research
-```
-
-For rootful web access, set these in `appdata/hermes/.env`:
-
-```bash
-FIRECRAWL_API_URL=http://127.0.0.1:3002
-CAMOFOX_URL=http://127.0.0.1:9377
-```
-
-Validate and start rootful mode with the override:
-
-```bash
-docker compose --env-file .env -f docker-compose.yml -f docker-compose.rootful.yml config
-docker compose --env-file .env -f docker-compose.yml -f docker-compose.rootful.yml up -d
-```
 
 ## Remote UI Access
 
@@ -463,7 +448,7 @@ configure those Hermes platforms to bind `0.0.0.0` inside the container.
 - If you need to create, inspect, or delete banks manually, temporarily enable the commented `hindsight_admin` MCP server in the relevant profile config. Keep it disabled during normal profile use.
 - If you change `HEADROOM_PROXY_HOST_PORT`, update the matching `HEADROOM_PROXY_URL` in each profile config or template that should use it.
 - If you change `HEADROOM_IMAGE`, update the same image string in each profile config or template unless your Hermes config supports environment interpolation.
-- Keep `hermes-data/config.rootless.yaml` and `hermes-data/config.rootful.yaml` as reusable base-profile seed configs. Make Hindsight, Headroom, and profile-specific agent setup changes in the active profile config under `appdata/hermes/profiles/<name>/config.yaml`.
+- Keep `hermes-data/config.rootless.yaml` as the reusable base-profile seed config. Make Hindsight, Headroom, and profile-specific agent setup changes in the active profile config under `appdata/hermes/profiles/<name>/config.yaml`.
 - Hermes still exposes `default` as its built-in base `HERMES_HOME`; this stack makes the quickstart-created named profile active, but mirrors the selected runtime model into the base config because some dashboard model/session routes are not fully profile-scoped.
 - Headroom's upstream Compose stack also includes Qdrant and Neo4j for memory-oriented features. This bundle keeps the base stack lean; add those services later if you enable Headroom features that require them.
 - Do not run a separate host-installed Hermes against the same `appdata/hermes` directory.

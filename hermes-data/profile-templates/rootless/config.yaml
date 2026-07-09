@@ -1,6 +1,6 @@
 # Profile-local Hermes config template for rootless Docker.
 #
-# scripts/create-profile-rootless.sh replaces:
+# scripts/create-profile.sh replaces:
 #   __PROFILE__ with the Hermes profile name
 #   __BANK_ID__ with the Hindsight bank ID, default hermes-<profile>
 

@@ -76,8 +76,6 @@ backup_root="$script_dir/reset-backups"
 backup_dir="$backup_root/$(timestamp)-$$"
 
 compose_base='docker compose --env-file .env'
-compose_rootless="$compose_base"
-compose_rootful="$compose_base -f docker-compose.yml -f docker-compose.rootful.yml"
 
 paths_to_reset='
 	hermes-data/.clean_shutdown
@@ -155,7 +153,7 @@ else
 fi
 
 if [ "$run_down" = yes ]; then
-  printf 'Compose: stop rootful and rootless project variants before file reset.\n'
+  printf 'Compose: stop the rootless project before file reset.\n'
 else
   printf 'Compose: skip docker compose down.\n'
 fi
@@ -185,8 +183,7 @@ run_compose_down() {
 }
 
 if [ "$run_down" = yes ]; then
-  run_compose_down "$compose_rootless"
-  run_compose_down "$compose_rootful"
+  run_compose_down "$compose_base"
 fi
 
 if [ "$remove_volumes" = yes ]; then
