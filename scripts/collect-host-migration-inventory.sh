@@ -8,7 +8,7 @@ timestamp() {
   date +%Y%m%dT%H%M%S 2>/dev/null || date +%s
 }
 
-output_file=${1:-${MIGRATION_INVENTORY_OUTPUT:-$stack_dir/migration-inventory/host-migration-$(timestamp).md}}
+output_file=${1:-${MIGRATION_INVENTORY_OUTPUT:-/tmp/host-migration-$(timestamp).md}}
 hermes_home=${HERMES_HOST_HOME:-$HOME/.hermes}
 memory_vault=${HERMES_MEMORY_VAULT:-$HOME/hermes/Memory_Vault}
 compose_search_roots=${COMPOSE_SEARCH_ROOTS:-"$HOME/hermes $HOME/.hermes $PWD"}
