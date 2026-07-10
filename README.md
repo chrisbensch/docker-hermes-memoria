@@ -149,6 +149,16 @@ generates web-search secrets, clones the Firecrawl build source, configures
 Hermes to use Firecrawl/Camofox, and prints the Compose command to run. Use the
 manual steps below when you want to edit each file yourself.
 
+To check a clone or migrated checkout without changing files, run:
+
+```bash
+./setup.sh --check
+```
+
+The check reports missing generated local files such as `.env`,
+`web-search/searxng-settings.yml`, `.firecrawl-src`, and `appdata/hindsight`
+before Compose fails on a bind mount or build context.
+
 To reset a failed or experimental setup:
 
 ```bash

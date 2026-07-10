@@ -16,6 +16,21 @@ timestamp() {
   date +%Y%m%dT%H%M%S 2>/dev/null || date +%s
 }
 
+usage() {
+  cat <<'EOF'
+Usage: ./setup.sh [--check] [-h|--help]
+
+Prepare the rootless Hermes Compose stack. With no options, setup writes local
+env files, creates appdata directories, generates per-host SearXNG settings,
+clones Firecrawl source for nuq-postgres, creates a Hermes profile, and verifies
+the Compose config.
+
+Options:
+  --check      Report whether the repo is ready to run Compose without changing files.
+  -h, --help   Show this help.
+EOF
+}
+
 backup_file() {
   file=$1
   if [ -f "$file" ] && [ ! -f "$file.bak-$(timestamp)" ]; then
@@ -239,6 +254,251 @@ generate_secret() {
   fi
 }
 
+status_ok() {
+  printf 'OK       %s\n' "$1"
+}
+
+status_warn() {
+  printf 'WARN     %s\n' "$1"
+  preflight_warnings=$((preflight_warnings + 1))
+}
+
+status_need() {
+  printf 'NEEDED   %s\n' "$1"
+  preflight_needs_setup=$((preflight_needs_setup + 1))
+}
+
+status_fail() {
+  printf 'FAIL     %s\n' "$1"
+  preflight_failures=$((preflight_failures + 1))
+}
+
+resolve_stack_path() {
+  path=$1
+  case "$path" in
+    /*) printf '%s\n' "$path" ;;
+    ./*) printf '%s/%s\n' "$script_dir" "${path#./}" ;;
+    *) printf '%s/%s\n' "$script_dir" "$path" ;;
+  esac
+}
+
+check_required_file() {
+  file=$1
+  label=$2
+  if [ -f "$file" ]; then
+    status_ok "$label: $file"
+  else
+    status_fail "$label missing: $file"
+  fi
+}
+
+check_required_command() {
+  command_name=$1
+  if command -v "$command_name" >/dev/null 2>&1; then
+    status_ok "command available: $command_name"
+  else
+    status_fail "command missing: $command_name"
+  fi
+}
+
+docker_supports_compose() {
+  command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1
+}
+
+check_docker_context() {
+  docker_sock=$1
+
+  check_required_command docker
+  if ! docker_supports_compose; then
+    status_fail "docker compose plugin is unavailable"
+    return 0
+  fi
+  status_ok "docker compose plugin is available"
+
+  if [ -S "$docker_sock" ]; then
+    status_ok "Docker socket exists: $docker_sock"
+  else
+    status_fail "Docker socket is not available: $docker_sock"
+  fi
+
+  docker_security=$(docker info --format '{{json .SecurityOptions}}' 2>/dev/null || true)
+  if [ -z "$docker_security" ]; then
+    status_fail "docker info failed for the current Docker context"
+  elif printf '%s\n' "$docker_security" | grep -q rootless; then
+    status_ok "Docker context reports rootless mode"
+  else
+    status_fail "Docker context does not report rootless mode"
+  fi
+}
+
+check_hermes_env_value() {
+  file=$1
+  key=$2
+  expected=$3
+  value=$(get_env_value "$file" "$key" || true)
+  if [ "$value" = "$expected" ]; then
+    status_ok "$key uses integrated stack URL"
+  else
+    status_warn "$key is '${value:-unset}', expected '$expected'"
+  fi
+}
+
+run_compose_config_check() {
+  if [ ! -f "$env_file" ]; then
+    status_need ".env is missing; run ./setup.sh to generate it"
+    return 1
+  fi
+
+  compose_tmp=${TMPDIR:-/tmp}/hermes-compose-config.$$
+  compose_err=${TMPDIR:-/tmp}/hermes-compose-config.err.$$
+  if docker compose --env-file "$env_file" config >"$compose_tmp" 2>"$compose_err"; then
+    status_ok "docker compose --env-file .env config"
+    rm -f "$compose_tmp" "$compose_err"
+    return 0
+  fi
+
+  status_fail "docker compose --env-file .env config failed"
+  sed -n '1,80p' "$compose_err" >&2 || true
+  rm -f "$compose_tmp" "$compose_err"
+  return 1
+}
+
+preflight_check() {
+  preflight_failures=0
+  preflight_warnings=0
+  preflight_needs_setup=0
+
+  printf '\nHermes Compose preflight\n\n'
+
+  check_required_file "$env_example" "Compose env template"
+  check_required_file "$script_dir/docker-compose.yml" "Compose file"
+  check_required_file "$hermes_env_example" "Hermes env template"
+  check_required_file "$seed_dir/config.rootless.yaml" "Rootless config seed"
+  check_required_file "$script_dir/web-search/searxng-settings.template.yml" "SearXNG settings template"
+  check_required_file "$script_dir/web-search/nginx.conf" "SearXNG nginx config"
+  check_required_file "$script_dir/web-search/searxng-limiter.toml" "SearXNG limiter config"
+  check_required_file "$script_dir/scripts/create-profile.sh" "Profile creation script"
+  check_required_file "$script_dir/scripts/normalize-appdata-permissions.sh" "Permission normalization script"
+
+  docker_sock=$(env_default "$env_file" DOCKER_SOCK "/run/user/$(id -u)/docker.sock")
+  check_docker_context "$docker_sock"
+
+  appdata_dir=$(env_default "$env_file" APPDATA_DIR ./appdata)
+  appdata_host_dir=$(resolve_stack_path "$appdata_dir")
+  settings_file=$(resolve_stack_path "$(env_default "$env_file" SEARXNG_SETTINGS_FILE ./web-search/searxng-settings.yml)")
+  firecrawl_source_dir=$(resolve_stack_path "$(env_default "$env_file" FIRECRAWL_SOURCE_DIR ./.firecrawl-src)")
+
+  if [ -f "$env_file" ]; then
+    status_ok "Compose env exists: .env"
+  else
+    status_need ".env will be generated from .env.example by ./setup.sh"
+  fi
+
+  if [ -d "$appdata_host_dir/hermes" ]; then
+    status_ok "Hermes appdata exists: $appdata_host_dir/hermes"
+  else
+    status_need "Hermes appdata will be created: $appdata_host_dir/hermes"
+  fi
+
+  if [ -d "$appdata_host_dir/hindsight" ]; then
+    status_ok "Hindsight appdata exists: $appdata_host_dir/hindsight"
+  else
+    status_need "Hindsight appdata will be created: $appdata_host_dir/hindsight"
+  fi
+
+  if [ -f "$settings_file" ]; then
+    if grep -q 'CHANGE-ME-TO-A-RANDOM-SECRET' "$settings_file"; then
+      status_need "SearXNG settings still contain placeholder secret: $settings_file"
+    else
+      status_ok "SearXNG settings exist with local secret: $settings_file"
+    fi
+  else
+    status_need "SearXNG settings will be generated: $settings_file"
+  fi
+
+  if [ -f "$firecrawl_source_dir/apps/nuq-postgres/Dockerfile" ]; then
+    status_ok "Firecrawl nuq-postgres source exists: $firecrawl_source_dir/apps/nuq-postgres"
+  else
+    status_need "Firecrawl source will be cloned into: $firecrawl_source_dir"
+    if command -v git >/dev/null 2>&1; then
+      status_ok "command available: git"
+    else
+      status_fail "git is required to clone Firecrawl source"
+    fi
+  fi
+
+  if [ -f "$appdata_host_dir/hermes/.env" ]; then
+    check_hermes_env_value "$appdata_host_dir/hermes/.env" FIRECRAWL_API_URL http://firecrawl-api:3002
+    check_hermes_env_value "$appdata_host_dir/hermes/.env" CAMOFOX_URL http://camofox:9377
+    check_hermes_env_value "$appdata_host_dir/hermes/.env" OBSIDIAN_VAULT_PATH /opt/data/obsidian-memory-vault
+  else
+    status_need "Hermes runtime env will be generated: $appdata_host_dir/hermes/.env"
+  fi
+
+  if [ -f "$env_file" ]; then
+    run_compose_config_check || true
+  else
+    status_need "Compose config check will run after .env is generated"
+  fi
+
+  printf '\nPreflight summary: %s failure(s), %s item(s) need setup, %s warning(s).\n' "$preflight_failures" "$preflight_needs_setup" "$preflight_warnings"
+  if [ "$preflight_failures" -gt 0 ]; then
+    printf 'Fix the failed checks before running the stack.\n'
+    return 1
+  fi
+  if [ "$preflight_needs_setup" -gt 0 ]; then
+    printf 'Run ./setup.sh to generate local files, secrets, appdata directories, and Firecrawl source.\n'
+    return 1
+  fi
+  printf 'Ready to validate and start with: docker compose --env-file .env config && docker compose --env-file .env up -d\n'
+  return 0
+}
+
+setup_prerequisite_check() {
+  preflight_failures=0
+  preflight_warnings=0
+  preflight_needs_setup=0
+
+  printf 'Checking setup prerequisites...\n'
+  check_required_file "$env_example" "Compose env template"
+  check_required_file "$script_dir/docker-compose.yml" "Compose file"
+  check_required_file "$hermes_env_example" "Hermes env template"
+  check_required_file "$seed_dir/config.rootless.yaml" "Rootless config seed"
+  check_required_file "$script_dir/web-search/searxng-settings.template.yml" "SearXNG settings template"
+  check_required_file "$script_dir/web-search/nginx.conf" "SearXNG nginx config"
+  check_required_file "$script_dir/web-search/searxng-limiter.toml" "SearXNG limiter config"
+
+  firecrawl_source_dir=$(resolve_stack_path "$(env_default "$env_file" FIRECRAWL_SOURCE_DIR ./.firecrawl-src)")
+  if [ -f "$firecrawl_source_dir/apps/nuq-postgres/Dockerfile" ]; then
+    status_ok "Firecrawl nuq-postgres source exists: $firecrawl_source_dir/apps/nuq-postgres"
+  else
+    check_required_command git
+  fi
+
+  docker_sock=$(env_default "$env_file" DOCKER_SOCK "/run/user/$(id -u)/docker.sock")
+  check_docker_context "$docker_sock"
+
+  if [ "$preflight_failures" -gt 0 ]; then
+    printf '\nSetup cannot continue until the failed prerequisite checks are fixed.\n' >&2
+    exit 1
+  fi
+  printf 'Prerequisites look good; setup will create any missing generated files.\n\n'
+}
+
+post_setup_check() {
+  preflight_failures=0
+  preflight_warnings=0
+  preflight_needs_setup=0
+
+  printf '\nChecking Compose readiness...\n'
+  run_compose_config_check || {
+    printf '\nSetup files were written, but Compose is not ready yet. Fix the config error above, then run:\n'
+    printf '  docker compose --env-file .env config\n'
+    exit 1
+  }
+  printf 'Compose config is ready.\n'
+}
+
 write_searxng_settings() {
   settings_file=$1
   template_file="$script_dir/web-search/searxng-settings.template.yml"
@@ -291,8 +551,31 @@ default_lm_base_url() {
   printf 'http://host.docker.internal:1234/v1\n'
 }
 
+check_only=no
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --check) check_only=yes ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      printf 'Unknown option: %s\n\n' "$1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
+
+if [ "$check_only" = yes ]; then
+  preflight_check
+  exit $?
+fi
+
 printf '\nHermes Compose setup\n'
 printf 'This writes rootless .env files, creates a named profile, and prints the Compose command.\n\n'
+setup_prerequisite_check
 
 default_appdata_dir=$(env_default "$env_file" APPDATA_DIR ./appdata)
 case "$default_appdata_dir" in
@@ -536,6 +819,8 @@ headroom_host=127.0.0.1
 [ "$dashboard_bind" = 0.0.0.0 ] && dashboard_host=$server_ip
 [ "$hindsight_bind" = 0.0.0.0 ] && hindsight_host=$server_ip
 [ "$headroom_bind" = 0.0.0.0 ] && headroom_host=$server_ip
+
+post_setup_check
 
 printf '\nSetup files updated.\n\n'
 printf 'Validate the Compose file:\n'

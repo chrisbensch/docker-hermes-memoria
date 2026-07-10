@@ -11,6 +11,12 @@ and then prints the exact Compose command, run:
 ./setup.sh
 ```
 
+To inspect a clone without writing files, run:
+
+```bash
+./setup.sh --check
+```
+
 To clear generated state after a failed setup or manual experimentation, run:
 
 ```bash
