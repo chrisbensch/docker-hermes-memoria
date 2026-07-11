@@ -203,8 +203,10 @@ python3 scripts/restore-hindsight-bank-backup.py \
 ```
 
 The restore command defaults to a read-only target preflight and refuses banks
-that already exist. The write-enabled `--apply` path creates a timestamped raw
-Hindsight archive first, preserves observations, and verifies imported counts.
+that already exist. The write-enabled `--apply` path creates a best-effort live
+diagnostic archive before writing, preserves observations, and verifies
+imported counts. That live archive is not a quiesced database checkpoint;
+create an independent weekly raw checkpoint or other verified backup first.
 Restore one pilot bank before all banks, and verify LLM connectivity before
 requeueing consolidation. See [OPERATIONS.md](OPERATIONS.md) for the complete
 preflight, pilot, all-bank, and post-restore sequence.
@@ -224,6 +226,13 @@ service again before uploading to Restic.
 
 Install the persistent user timers after configuring
 `~/.config/hermes-backup/restic.env` and its password file:
+
+The checked-in backup defaults and systemd units target the validated
+`sysadmin` deployment at `/home/sysadmin/docker-hermes-memoria` with rootless
+UID `1000`. Other users or checkout paths must update the service units and set
+`HERMES_BACKUP_RESTIC_ENV` and `HERMES_BACKUP_STATE_ROOT` before installing
+timers. Both the environment file and password file must be mode `0600` or
+`0400`.
 
 ```bash
 sudo loginctl enable-linger "$USER"
@@ -292,7 +301,7 @@ configure those Hermes platforms to bind `0.0.0.0` inside the container.
 
 - Hindsight multi-bank mode uses `http://127.0.0.1:8888/mcp/`. The profile configs use single-bank URLs like `http://127.0.0.1:8888/mcp/hermes-research/` to keep memory separated by profile.
 - If you need to create, inspect, or delete banks manually, temporarily enable the commented `hindsight_admin` MCP server in the relevant profile config. Keep it disabled during normal profile use.
-- If you change `HEADROOM_PROXY_HOST_PORT`, update the matching `HEADROOM_PROXY_URL` in each profile config or template that should use it.
+- Changing `HEADROOM_PROXY_HOST_PORT` changes only the host-published URL. Containers continue to use `http://headroom-proxy:8787`; update profile configuration only if it incorrectly points through the host port.
 - If you change `HEADROOM_IMAGE`, update the same image string in each profile config or template unless your Hermes config supports environment interpolation.
 - Keep `hermes-data/config.rootless.yaml` as the reusable base-profile seed config. Make Hindsight, Headroom, and profile-specific agent setup changes in the active profile config under `appdata/hermes/profiles/<name>/config.yaml`.
 - Hermes still exposes `default` as its built-in base `HERMES_HOME`; this stack makes the quickstart-created named profile active, but mirrors the selected runtime model into the base config because some dashboard model/session routes are not fully profile-scoped.
