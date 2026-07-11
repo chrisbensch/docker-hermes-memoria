@@ -96,6 +96,8 @@ rewrite_text=${MIGRATE_REWRITE_TEXT:-1}
 backup_dir="$data_dir/migration-backups/$(timestamp)"
 host_archive_dir="$data_dir/host-migration"
 vault_dest="$data_dir/obsidian-memory-vault"
+hermes_image=${HERMES_IMAGE:-$(env_default HERMES_IMAGE nousresearch/hermes-agent:latest)}
+hermes_uid=${HERMES_UID:-$(env_default HERMES_UID 10000)}
 
 run() {
   if [ "$dry_run" = 1 ]; then
@@ -359,6 +361,20 @@ activate_profile() {
   fi
 }
 
+normalize_vault_permissions() {
+  if [ "$dry_run" = 1 ]; then
+    printf '[dry-run] fix Obsidian vault permissions at %s with %s\n' "$vault_dest" "$stack_dir/scripts/fix-obsidian-vault-permissions.sh"
+    return 0
+  fi
+
+  HERMES_ENV_FILE="$stack_dir/.env" \
+  HERMES_DATA_DIR="$data_dir" \
+  HERMES_OBSIDIAN_VAULT_DIR="$vault_dest" \
+  HERMES_IMAGE="$hermes_image" \
+  HERMES_UID="$hermes_uid" \
+    "$stack_dir/scripts/fix-obsidian-vault-permissions.sh"
+}
+
 cat <<EOF
 Hermes host data migration
 
@@ -381,6 +397,7 @@ profile_list | while IFS= read -r profile; do
 done
 
 activate_profile
+normalize_vault_permissions
 
 cat <<EOF
 

@@ -64,6 +64,11 @@ grep -Fq 'hermes-appended' "$vault_script"
 ! grep -Eq 'chmod[[:space:]]+(-R[[:space:]]+)?0?777' "$vault_script"
 ! grep -Fq '/tmp/obsidian' "$vault_script"
 
+grep -Fq 'fix-obsidian-vault-permissions.sh' setup.sh
+grep -Fq 'fix-obsidian-vault-permissions.sh' scripts/migrate-host-hermes-data.sh
+grep -Fq 'fix-obsidian-vault-permissions.sh' scripts/normalize-appdata-permissions.sh
+grep -Fq '[dry-run] fix Obsidian vault permissions' scripts/migrate-host-hermes-data.sh
+
 sqlite_test_dir=$(mktemp -d)
 trap 'rm -rf "$sqlite_test_dir"' EXIT
 python3 - "$sqlite_test_dir/source.db" <<'PY'
