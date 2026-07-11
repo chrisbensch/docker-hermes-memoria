@@ -118,13 +118,39 @@ PY
 }
 
 stage_daily() {
+  local database profile profile_databases
+
   compose exec -T hermes tar \
+    --ignore-failed-read \
+    --warning=no-file-changed \
     --exclude=./logs \
     --exclude=./.cache \
     --exclude=./audio_cache \
     --exclude=./image_cache \
     --exclude=./lazy-packages \
+    --exclude='./profiles/*/state.db*' \
+    --exclude='./profiles/*/logs' \
+    --exclude='./profiles/*/cache' \
+    --exclude='./profiles/*/home/.cache' \
+    --exclude='./profiles/*/home/.npm' \
     -C /opt/data -czf - . > "$staging/hermes-data.tar.gz"
+
+  profile_databases=$(compose exec -T hermes find /opt/data/profiles \
+    -mindepth 2 -maxdepth 2 -type f -name state.db -print)
+  while IFS= read -r database; do
+    [[ -n $database ]] || continue
+    profile=${database#/opt/data/profiles/}
+    profile=${profile%/state.db}
+    [[ $profile =~ ^[A-Za-z0-9._-]+$ ]] || {
+      printf 'Unsafe Hermes profile name in database path: %s\n' "$database" >&2
+      return 1
+    }
+    mkdir -p "$staging/hermes-profile-databases/$profile"
+    compose exec -T hermes python3 - "$database" \
+      < "$REPO_ROOT/scripts/export-sqlite-database.py" \
+      > "$staging/hermes-profile-databases/$profile/state.db"
+  done <<< "$profile_databases"
+
   compose exec -T headroom-proxy tar -C /home/nonroot -czf - .headroom > "$staging/headroom-data.tar.gz"
   compose exec -T firecrawl-nuq-postgres sh -lc 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$staging/firecrawl-postgres.sql"
   python3 "$REPO_ROOT/scripts/backup-hindsight-banks.py" \
