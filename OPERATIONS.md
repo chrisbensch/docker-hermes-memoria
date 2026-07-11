@@ -80,14 +80,88 @@ curl -fsS http://127.0.0.1:9377/health
 
 These correspond to `hindsight-mcp`, `headroom-proxy`, `firecrawl-api`,
 `searxng`, and `camofox` on the Compose network. A running `headroom-mcp`
-container is expected to sleep until Hermes starts its stdio MCP command:
+container is expected to sleep until Hermes starts its stdio MCP command. The
+proxy readiness check above validates the HTTP proxy, not MCP transport.
 
 ```bash
 docker compose --env-file .env ps headroom-mcp
-docker exec -i hermes-headroom-mcp headroom mcp serve
 ```
 
-The second command is an interactive diagnostic; stop it with `Ctrl-C`.
+Do not replace the stdio transport with the proxy URL. See the Headroom MCP
+procedure below for the canonical profile-aware test.
+
+## Headroom MCP Stdio And Socket Access
+
+Headroom MCP is not an HTTP service. Hermes starts `headroom mcp serve` over
+stdio with `docker exec -i` in the intentionally sleeping
+`hermes-headroom-mcp` container. The Hermes service already mounts the rootless
+socket selected by `DOCKER_SOCK`; adding `/var/run/docker.sock` again can target
+the wrong daemon and grants no missing capability.
+
+The image creates `hostdocker` dynamically from the mounted socket GID. Profile
+configuration invokes `sg hostdocker -c` so MCP subprocesses reacquire that
+group even when an agent-session or cron path has dropped supplementary groups.
+Do not put a host, subordinate, or container socket GID in Compose or profile
+configuration. The `headroom-proxy` service at port 8787 supports proxy and
+statistics APIs, but it is not an HTTP MCP endpoint.
+
+Use Hermes' profile-aware client test as the canonical check, replacing
+`<profile>` with the actual profile name:
+
+```bash
+docker compose --env-file .env exec -T hermes \
+  /package/admin/s6/command/s6-setuidgid hermes \
+  hermes -p <profile> mcp test headroom
+```
+
+A successful result connects and discovers `headroom_compress`,
+`headroom_retrieve`, and `headroom_stats`. For lower-level socket confirmation,
+explicitly reacquire the group:
+
+```bash
+docker compose --env-file .env exec -T -u 1000:1000 hermes \
+  sg hostdocker -c 'docker version >/dev/null'
+```
+
+Do not use a bare `docker compose exec -u 1000:1000 hermes docker ...` result as
+proof that the configured MCP path is broken. The `-u` execution path can omit
+supplementary groups and create the same false socket failure that
+`sg hostdocker` is designed to prevent.
+
+When a profile fails to register Headroom tools, inspect its MCP stderr log:
+
+```bash
+profile=<profile>
+tail -n 200 "appdata/hermes/profiles/$profile/logs/mcp-stderr.log"
+```
+
+Look for new `Connection closed` or Docker socket errors after the latest
+Hermes restart. Also verify that the profile block uses `command: sg`, followed
+by `hostdocker`, `-c`, and the expected `exec docker exec -i` command.
+
+### Update Existing Profiles
+
+The updater runs through the Hermes container so it can read permission-mapped
+profile files. Preview all recognized profile configs before writing:
+
+```bash
+python3 scripts/fix-headroom-mcp-command.py --dry-run
+python3 scripts/fix-headroom-mcp-command.py
+```
+
+Limit either operation with repeatable profile selectors:
+
+```bash
+python3 scripts/fix-headroom-mcp-command.py --dry-run --profile maestro
+python3 scripts/fix-headroom-mcp-command.py --profile maestro
+```
+
+Each changed file receives an adjacent UTC-stamped backup named
+`config.yaml.headroom-mcp-backup-<UTC>`. Already-correct files are unchanged,
+and custom, malformed, or ambiguous Headroom blocks are refused rather than
+overwritten. After applying changes, restart Hermes and rerun the canonical MCP
+test. To roll back, stop Hermes, restore the appropriate adjacent backup over
+`config.yaml`, restart Hermes, and test the same profile again.
 
 ## Dashboard Authentication
 
@@ -279,13 +353,16 @@ OBSIDIAN_VAULT_PATH=/opt/data/obsidian-memory-vault
 ```
 
 Also inspect profile MCP configuration for single-bank Hindsight URLs such as
-`http://hindsight-mcp:8888/mcp/hermes-<profile>/` and the Docker-backed
-Headroom command:
+`http://hindsight-mcp:8888/mcp/hermes-<profile>/` and the group-reacquiring
+Headroom stdio command:
 
 ```bash
-grep -R -n -E 'hindsight-mcp:8888|hermes-headroom-mcp|headroom mcp serve' \
+grep -R -n -E 'hindsight-mcp:8888|command:.*sg|hostdocker|headroom mcp serve' \
   appdata/hermes/profiles/*/config.yaml
 ```
+
+For copied profiles that still invoke Docker directly, use the dry-run and
+apply workflow in [Headroom MCP Stdio And Socket Access](#headroom-mcp-stdio-and-socket-access).
 
 ### Memory Vault And Cron
 

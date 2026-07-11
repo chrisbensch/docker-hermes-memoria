@@ -1,6 +1,6 @@
 # Hermes Agent Compose Stack
 
-This bundle targets an Ubuntu Linux server or desktop where Hermes Agent is not installed directly on the host. Hermes and the long-running sidecars run through Docker Compose; Headroom MCP runs inside a Compose-managed Headroom container and Hermes connects to it with `docker exec`.
+This bundle targets an Ubuntu Linux server or desktop where Hermes Agent is not installed directly on the host. Hermes and the long-running sidecars run through Docker Compose; Headroom MCP runs on demand inside a Compose-managed Headroom container and Hermes connects to it over stdio through `sg hostdocker -c` and `docker exec`.
 
 For the shortest setup path, run `./setup.sh` or start with [QUICKSTART.md](QUICKSTART.md).
 If a setup attempt gets messy, run `./reset.sh` to archive generated state and
@@ -31,6 +31,8 @@ start fresh.
 - `scripts/create-profile-rootless.sh` is a compatibility wrapper for the same rootless profile scaffold.
 - `scripts/fix-obsidian-vault-permissions.sh` applies and verifies the shared
   host/Hermes write policy for the Obsidian vault.
+- `scripts/fix-headroom-mcp-command.py` safely updates existing profile configs
+  to the rootless Headroom stdio command.
 - `hermes-config-fragment.yaml` contains the web/browser and MCP blocks if you want to merge them into an existing config.
 - `.env.example` contains Compose-level settings such as image names and ports.
 - `hermes-data/.env.example` is copied to `appdata/hermes/.env` for Hermes runtime provider secrets.
@@ -41,7 +43,7 @@ them as:
 
 ```text
 http://hindsight-mcp:8888/mcp/hermes-research/
-docker exec -i hermes-headroom-mcp headroom mcp serve
+sg hostdocker -c 'exec docker exec -i -e HEADROOM_PROXY_URL=http://headroom-proxy:8787 hermes-headroom-mcp headroom mcp serve'
 ```
 
 The Hindsight container follows the upstream Docker recipe:
@@ -56,8 +58,14 @@ The Headroom MCP container follows the repo's Docker image and stdio MCP pattern
 
 - Image: `ghcr.io/chopratejas/headroom:0.27.0`
 - Compose container: `hermes-headroom-mcp`
-- MCP transport: stdio via `headroom mcp serve`
+- MCP transport: stdio via `sg hostdocker -c` and `headroom mcp serve`
 - Shared data directory: `appdata/headroom`
+
+The MCP container sleeping while idle is expected. The Hermes container already
+mounts the configured rootless Docker socket; `sg hostdocker` reacquires the
+dynamically created socket group for agent and cron execution paths that drop
+supplementary groups. Do not hard-code a mapped GID or mount a second host
+socket. The healthy `headroom-proxy` HTTP service is not an MCP endpoint.
 
 The Headroom proxy starts with the base Compose stack. Headroom's `/stats`,
 `/stats-history`, and `/readyz` HTTP endpoints are available on
@@ -91,7 +99,12 @@ Ubuntu hosts must provide `setfacl` from the `acl` package. Setup, migration,
 and `scripts/normalize-appdata-permissions.sh` invoke the vault permission
 helper automatically.
 
-Because Hermes is itself containerized, `docker-compose.yml` mounts the Docker socket into the Hermes container. This lets Hermes run `docker exec -i hermes-headroom-mcp headroom mcp serve` for Headroom's stdio MCP server. Treat that socket mount as powerful host access and keep this stack on a machine/user boundary you trust.
+Because Hermes is itself containerized, `docker-compose.yml` mounts the
+deployment user's rootless Docker socket into the Hermes container. This lets
+Hermes start Headroom's stdio MCP server with `docker exec`; `sg hostdocker`
+ensures the subprocess can access that socket even when its parent lost
+supplementary groups. Treat the socket mount as powerful daemon access and keep
+this stack on a machine/user boundary you trust.
 
 ## Memory Model
 
@@ -292,6 +305,9 @@ The rootless profile scaffold pins Hindsight to `hermes-<profile>`, uses
 Compose service names for Hindsight, Headroom, Firecrawl, Camofox, and SearXNG,
 and makes the first named profile active. [QUICKSTART.md](QUICKSTART.md) owns the
 setup commands; [OPERATIONS.md](OPERATIONS.md) owns status and repair commands.
+Existing profiles created before the `sg hostdocker` fix can be inspected and
+migrated with `scripts/fix-headroom-mcp-command.py`; the runbook documents its
+dry-run, selected-profile, backup, and rollback workflow.
 
 ## Remote UI Access
 
