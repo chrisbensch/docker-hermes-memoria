@@ -1,31 +1,96 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
+## Purpose And Layout
 
-This repository is a rootless Docker Compose bundle for running Hermes Agent with Hindsight MCP, Headroom MCP, and Firecrawl/SearXNG/Camofox web sidecars. The main stack is `docker-compose.yml`. Tracked Hermes seed configuration lives under `hermes-data/`: `config.rootless.yaml`, `profile-templates/`, and optional `profile-overrides/`. Use `hermes-data/profile-overrides/_TEMPLATE/SOUL.md` when migrating reusable profile SOUL files, preserving role/workflow instructions while replacing deployment-specific paths with placeholders. Writable Hermes runtime state lives under ignored `appdata/hermes/`, including local `config.yaml`, generated profiles, and the shared Obsidian vault at `appdata/hermes/obsidian-memory-vault/`. Web-search templates live in `web-search/`; generated `web-search/searxng-settings.yml` and `.firecrawl-src/` are ignored. Helper scripts are in `scripts/`. Keep secrets in local `.env` files copied from `.env.example` files, not in committed YAML.
+This repository packages Hermes Agent and its Hindsight, Headroom, Firecrawl,
+SearXNG, and Camofox dependencies as a rootless Docker Compose stack.
 
-## Build, Test, and Development Commands
+- `docker-compose.yml` defines the stack; use `.env` for local Compose values.
+- `hermes-data/` contains tracked seed configuration and profile templates.
+- `web-search/` contains tracked SearXNG and proxy templates. Generated
+  `web-search/searxng-settings.yml` and `.firecrawl-src/` are ignored.
+- `scripts/` contains profile, migration, Hindsight export/restore, permission,
+  Restic backup, and timer-installation utilities.
+- `systemd/` contains user services and timers for daily logical backups and
+  weekly raw Hindsight checkpoints.
+- `tests/` contains Bash integration/static checks and Python `unittest` tests.
+- `QUICKSTART.md` is the install path, `README.md` is the architecture reference,
+  and `OPERATIONS.md` is the day-two runbook.
+- `docs/superpowers/` records approved designs and implementation plans; do not
+  rewrite historical records while making unrelated changes.
 
-- `docker compose --env-file .env config`: validate the default rootless Compose configuration.
-- `docker compose --env-file .env up -d`: start Hermes, the Hermes dashboard, Hindsight, Headroom MCP plus proxy/stats, Firecrawl, SearXNG, and Camofox.
-- `./setup.sh`: run the guided local setup flow and print the matching Compose command.
-- `./reset.sh`: archive generated runtime state and prepare for a fresh `./setup.sh` run.
-- `./scripts/create-profile.sh research`: create a rootless profile using bank `hermes-research` and service-name MCP URLs.
-- `./scripts/create-profile-rootless.sh research`: compatibility wrapper for the same rootless profile scaffold.
-- `curl -fsS http://127.0.0.1:8888/health`, `curl -fsS http://127.0.0.1:8787/readyz`, and `curl -fsS http://127.0.0.1:3002/v0/health/liveness`: check core sidecar health.
+Ignored `appdata/` is writable runtime state, not a source tree. It includes
+Hermes profiles, SQLite databases, the Obsidian Memory Vault, Hindsight state,
+and other service data. Keep secrets in ignored `.env` files or external secret
+stores; commit only examples and templates.
 
-## Coding Style & Naming Conventions
+## Development Commands
 
-Use two-space indentation in YAML. Keep shell scripts POSIX-compatible (`#!/usr/bin/env sh`, `set -eu`) and prefer lowercase variable names for local script variables. Profile names must be lowercase and use only letters, numbers, underscores, and hyphens; `default` is reserved by Hermes for the base home. Hindsight bank IDs use the default pattern `hermes-<profile>`.
+Run commands from the repository root:
 
-## Testing Guidelines
+```bash
+docker compose --env-file .env config --quiet
+docker compose --env-file .env up -d
+docker compose --env-file .env ps
+bash tests/test_backup_scripts.sh
+python3 -m unittest discover -s tests -v
+bash -n scripts/*.sh setup.sh reset.sh
+git diff --check
+```
 
-There is no formal test suite. Before submitting changes, run the relevant `docker compose ... config` command and syntax-check scripts with `sh -n scripts/create-profile.sh scripts/create-profile-rootless.sh`. For profile template changes, create a temporary profile and inspect the generated `config.yaml`, `SOUL.md`, `.env.example`, and `README.md`.
+Compose validation requires a configured `.env`,
+`.firecrawl-src/apps/nuq-postgres`, and generated
+`web-search/searxng-settings.yml`. Report it as not run when those local inputs
+are absent; do not imply that syntax validation proves runtime health.
 
-## Commit & Pull Request Guidelines
+Use `./setup.sh` for guided setup, `./scripts/create-profile.sh <profile>` for a
+profile and bank, and `./scripts/install-backup-timers.sh` for systemd user
+timers. Migration work starts with
+`scripts/collect-host-migration-inventory.sh`, then uses
+`scripts/migrate-host-hermes-data.sh --dry-run` before applying changes.
 
-This workspace does not include Git history, so no project-specific commit convention can be inferred. Use concise, imperative commit subjects such as `Add rootless profile template`. Pull requests should describe the deployment path affected, list validation commands run, link related issues, and call out changes to ports, socket mounts, secrets, or profile defaults.
+## Coding Conventions
 
-## Security & Configuration Tips
+- Use two-space indentation in YAML and preserve existing Compose service names
+  for container-to-container URLs.
+- Legacy setup, migration, permission, and profile scripts may use POSIX `sh`
+  with `#!/usr/bin/env sh` and `set -eu`. Keep them POSIX-compatible.
+- Operational scripts use Bash with `#!/usr/bin/env bash` and
+  `set -Eeuo pipefail`. Quote expansions and fail clearly on missing inputs.
+- Python utilities use the standard library, type hints where useful, and
+  `unittest`. Keep network and filesystem operations injectable or testable.
+- Profile names are lowercase letters, numbers, underscores, and hyphens;
+  `default` is reserved. Hindsight bank IDs normally use `hermes-<profile>`.
 
-Treat the Docker socket mount as privileged host access. Do not commit `.env` files, API keys, generated local state, profile secrets, `.firecrawl-src/`, or generated SearXNG settings. Keep public examples in `.env.example` and template files only.
+## Migration, Backup, And Restore Safety
+
+- Rootless container data can display numeric ownership that differs from the
+  host user. Treat that as expected; use the provided normalization script only
+  when the documented workflow calls for it.
+- Never delete, replace, move, or recursively change ownership of `appdata/`
+  without first creating and verifying a timestamped copy or Restic snapshot.
+- Preserve migrated host configuration under `host-migration/` and existing
+  destination data under `migration-backups/`. Run migrations in dry-run mode
+  first and migrate all profiles unless the task explicitly narrows the scope.
+- Use `backup-hindsight-banks.py` for logical exports and
+  `validate-hindsight-bank-backup.py` before any restore. Treat
+  `restore-hindsight-bank-backup.py --apply` as a write operation and confirm
+  its target-bank preconditions and pre-restore checkpoint.
+- `backup-hermes-data.sh --mode daily` creates logical application exports;
+  `--mode weekly-raw` briefly stops Hindsight for a raw checkpoint. Failed
+  staging directories are retained intentionally for diagnosis; inspect them
+  before removing them.
+- Redis and RabbitMQ queue state for Firecrawl is intentionally excluded from
+  durable backups. Firecrawl PostgreSQL data is the durable component.
+- Never commit Restic repository credentials, password files, backup contents,
+  copied secrets, generated SearXNG settings, `.firecrawl-src/`, or `appdata/`.
+
+## Git And Review Workflow
+
+Inspect `git status` before editing and do not discard unrelated changes. Keep
+commits narrowly scoped with concise imperative subjects. Before committing,
+run the checks relevant to the changed files and record any unavailable runtime
+validation. Pull requests should identify the deployment path affected, list
+commands run, and call out changes to ports, socket mounts, ownership, secrets,
+profile defaults, migration behavior, or restore behavior. Push the intended
+branch and verify it matches its upstream when publication is part of the task.
