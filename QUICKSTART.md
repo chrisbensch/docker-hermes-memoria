@@ -39,6 +39,8 @@ Use this when Docker is running in rootless mode for your deployment user.
 
 ```bash
 cp .env.example .env
+sed -i "s/^HERMES_UID=.*/HERMES_UID=$(id -u)/" .env
+sed -i "s/^HERMES_GID=.*/HERMES_GID=$(id -g)/" .env
 sed -i "s|^DOCKER_SOCK=.*|DOCKER_SOCK=/run/user/$(id -u)/docker.sock|" .env
 test -S "/run/user/$(id -u)/docker.sock"
 mkdir -p appdata/hermes/obsidian-memory-vault appdata/hindsight appdata/headroom appdata/firecrawl-redis appdata/firecrawl-rabbitmq appdata/firecrawl-postgres

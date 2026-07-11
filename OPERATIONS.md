@@ -95,11 +95,19 @@ The dashboard is local-only by default. Before setting
 `HERMES_DASHBOARD_BIND_HOST=0.0.0.0`, configure basic authentication in
 `appdata/hermes/config.yaml`.
 
-Generate a password hash with the exact Hermes image used by the stack:
+Generate a password hash with the exact Hermes image used by the stack. The
+password is read without echo and passed through the container environment so
+it is not embedded in shell history:
 
 ```bash
-docker compose --env-file .env exec -T hermes \
-  python -c "from plugins.dashboard_auth.basic import hash_password; print(hash_password('<new-password>'))"
+read -rsp 'New dashboard password: ' DASH_PASSWORD
+printf '\n'
+export DASH_PASSWORD
+dashboard_hash=$(docker compose --env-file .env exec -T -e DASH_PASSWORD \
+  hermes-dashboard python -c \
+  'import os; from plugins.dashboard_auth.basic import hash_password; print(hash_password(os.environ["DASH_PASSWORD"]))')
+unset DASH_PASSWORD
+printf 'password_hash: "%s"\n' "$dashboard_hash"
 ```
 
 Store only the generated hash in the base runtime configuration:
@@ -118,22 +126,74 @@ docker compose --env-file .env up -d --force-recreate hermes-dashboard
 docker compose --env-file .env logs --tail=100 hermes-dashboard
 ```
 
-Verify the form endpoint directly. An unauthenticated protected request should
-redirect to login or return `401`; a valid form submission should return a
-redirect and establish a session cookie:
+Before testing HTTP login, verify that the password matches the hash visible
+inside the recreated dashboard container:
+
+```bash
+read -rsp 'Dashboard password to verify: ' DASH_PASSWORD
+printf '\n'
+export DASH_PASSWORD
+docker compose --env-file .env exec -T -e DASH_PASSWORD hermes-dashboard \
+  python - <<'PY'
+import os
+from hermes_cli.config import cfg_get, load_config
+from plugins.dashboard_auth.basic import _verify_password
+
+encoded = cfg_get(load_config(), "dashboard", "basic_auth", "password_hash")
+print("MATCH" if _verify_password(os.environ["DASH_PASSWORD"], encoded) else "NO MATCH")
+PY
+unset DASH_PASSWORD
+```
+
+The expected output is `MATCH`. Then test the dashboard's JSON password-login
+endpoint. An unauthenticated protected request should redirect to login or
+return `401`; successful login returns HTTP `200`, JSON containing
+`{"ok":true}`, and session cookies:
 
 ```bash
 cookie_jar=$(mktemp)
-curl -sS -o /dev/null -w 'unauthenticated: HTTP %{http_code}\n' \
-  http://127.0.0.1:9119/
-curl -sS -o /dev/null -w 'login: HTTP %{http_code}\n' \
+login_response=$(mktemp)
+trap 'rm -f "$cookie_jar" "$login_response"; unset DASH_PASSWORD' EXIT
+unauthenticated_http=$(curl -sS -o /dev/null -w '%{http_code}' \
+  http://127.0.0.1:9119/)
+case $unauthenticated_http in
+  301|302|303|307|308|401) ;;
+  *) printf 'Authentication gate is not active: HTTP %s\n' \
+       "$unauthenticated_http" >&2; exit 1 ;;
+esac
+printf 'unauthenticated: HTTP %s\n' "$unauthenticated_http"
+
+read -rsp 'Dashboard password to test: ' DASH_PASSWORD
+printf '\n'
+export DASH_PASSWORD
+login_http=$(python3 - <<'PY' | curl -sS -o "$login_response" \
+  -w 'login: HTTP %{http_code}\n' \
   -c "$cookie_jar" \
-  --data-urlencode 'username=admin' \
-  --data-urlencode 'password=<new-password>' \
-  'http://127.0.0.1:9119/login?next=%2F'
-curl -sS -o /dev/null -w 'authenticated: HTTP %{http_code}\n' \
-  -b "$cookie_jar" http://127.0.0.1:9119/
-rm -f "$cookie_jar"
+  -H 'content-type: application/json' \
+  --data-binary @- \
+  http://127.0.0.1:9119/auth/password-login
+import json
+import os
+
+print(json.dumps({
+    "provider": "basic",
+    "username": "admin",
+    "password": os.environ["DASH_PASSWORD"],
+    "next": "/",
+}))
+PY
+)
+unset DASH_PASSWORD
+test "$login_http" = 'login: HTTP 200'
+python3 -m json.tool "$login_response"
+python3 -c 'import json, sys; assert json.load(open(sys.argv[1]))["ok"] is True' \
+  "$login_response"
+authenticated_http=$(curl -sS -o /dev/null -w '%{http_code}' \
+  -b "$cookie_jar" http://127.0.0.1:9119/)
+test "$authenticated_http" = 200
+printf 'authenticated: HTTP %s\n' "$authenticated_http"
+rm -f "$cookie_jar" "$login_response"
+trap - EXIT
 ```
 
 Use `http://<server-ip>:9119/login?next=%2F` from a remote browser. The explicit
@@ -141,6 +201,37 @@ login URL avoids the OAuth-first redirect used by the dashboard root. If valid
 credentials still return `401`, confirm the hash is in the base
 `appdata/hermes/config.yaml`, not only a profile config, and confirm the
 dashboard container was recreated after the edit.
+
+### Trusted Remote UI Access
+
+The default loopback binds are safest. To expose selected interfaces on a
+trusted LAN or private overlay, set only the required values in `.env`:
+
+```bash
+HERMES_DASHBOARD_BIND_HOST=0.0.0.0
+HINDSIGHT_UI_BIND_HOST=0.0.0.0
+
+# This port is an LLM proxy as well as a statistics interface.
+HEADROOM_PROXY_BIND_HOST=0.0.0.0
+```
+
+Recreate the affected services and use the server address rather than
+`127.0.0.1`:
+
+```bash
+docker compose --env-file .env up -d --force-recreate \
+  hermes-dashboard hindsight-mcp headroom-proxy
+```
+
+```text
+Hermes Dashboard:        http://<server-ip>:9119/login?next=%2F
+Hindsight Control Plane: http://<server-ip>:9999
+Headroom stats:          http://<server-ip>:8787/stats
+Headroom history:        http://<server-ip>:8787/stats-history
+```
+
+Do not expose Hindsight or Headroom directly to an untrusted network. Prefer an
+SSH or Tailscale tunnel when broader bind addresses are unnecessary.
 
 ## Migrated Data Validation
 
@@ -255,11 +346,13 @@ OLD_MEMORY_VAULT=/path/to/migrated/Memory_Vault \
 
 ### Safety Gate Before Apply
 
-**Potentially destructive:** migration replaces some destination paths. The
-script moves overwritten files into a timestamped
-`appdata/hermes/migration-backups/` directory, but that is not a substitute for
-an independent backup. Before applying, create a Restic daily snapshot if the
-stack is operational:
+**Potentially destructive:** migration replaces some individual destination
+files and merges directory contents. Individual paths handled by the script's
+replacement helper are moved into timestamped
+`appdata/hermes/migration-backups/`, but same-name files inside merged vault,
+cron, script, memory, and similar directories may be overwritten without first
+being copied there. Create an independent backup before applying. If the stack
+is operational, run:
 
 ```bash
 ./scripts/backup-hermes-data.sh --mode daily
@@ -361,8 +454,11 @@ inventory in the report.
 
 **Writes to Hindsight:** `--apply` creates the selected bank and imports data.
 It first captures the current target `.pg0` state under a timestamped
-`tmp/hindsight-target-pre-restore-*` directory. Preserve that directory until
-the restored system is accepted.
+`tmp/hindsight-target-pre-restore-*` directory. Because Hindsight remains live
+during this script-created archive, treat it as a best-effort diagnostic copy,
+not a consistent rollback checkpoint. Create a quiesced weekly raw backup or
+another independently verified checkpoint before `--apply`, and preserve both
+until the restored system is accepted.
 
 ```bash
 python3 scripts/restore-hindsight-bank-backup.py \
@@ -405,20 +501,45 @@ Do not run the all-bank command against a target containing the pilot bank; the
 existing-bank guard will stop it. For the same target, pass one `--bank` option
 for each remaining bank instead.
 
-Before requesting consolidation, confirm Hindsight can reach its configured LLM
-endpoint from inside the container:
+Before requesting consolidation, inspect the configured provider. A blank
+explicit base URL is valid for OpenAI and DeepSeek, whose known provider
+defaults are selected below. LM Studio and other custom OpenAI-compatible
+providers must have a nonempty URL. The check performs an authenticated
+`/models` request from inside Hindsight without printing the API key:
 
 ```bash
 grep -E '^HINDSIGHT_API_LLM_(PROVIDER|MODEL|BASE_URL)=' .env
-docker compose --env-file .env exec -T hindsight-mcp \
-  sh -lc 'curl -fsS --max-time 10 "$HINDSIGHT_API_LLM_BASE_URL/models"'
+docker compose --env-file .env exec -T hindsight-mcp python - <<'PY'
+import os
+import urllib.request
+from urllib.parse import urlparse
+
+provider = os.environ.get("HINDSIGHT_API_LLM_PROVIDER", "openai").lower()
+base_url = os.environ.get("HINDSIGHT_API_LLM_BASE_URL", "").strip()
+if not base_url:
+    defaults = {
+        "openai": "https://api.openai.com/v1",
+        "deepseek": "https://api.deepseek.com/v1",
+    }
+    base_url = defaults.get(provider, "")
+if not base_url:
+    raise SystemExit(f"{provider} requires an explicit base URL for this check")
+
+headers = {}
+api_key = os.environ.get("HINDSIGHT_API_LLM_API_KEY", "").strip()
+if api_key:
+    headers["Authorization"] = f"Bearer {api_key}"
+request = urllib.request.Request(base_url.rstrip("/") + "/models", headers=headers)
+with urllib.request.urlopen(request, timeout=15) as response:
+    print(f"LLM endpoint reachable: HTTP {response.status} ({urlparse(base_url).hostname})")
+PY
 docker compose --env-file .env logs --tail=300 hindsight-mcp | \
   grep -i -E 'consolidat|error|timeout|connection' || true
 ```
 
-An empty base URL or failed container request must be corrected before
-requeuing consolidation. Do not treat a host-only `curl` as proof that the
-container network path works.
+A failed required container connection must be corrected before requeuing
+consolidation. Do not treat a host-only request as proof that the container
+network path works.
 
 ## Restic Backups
 
@@ -442,6 +563,14 @@ set -a
 source "$config"
 set +a
 test -r "$RESTIC_PASSWORD_FILE"
+case $(stat -c '%a' "$config") in
+  400|600) ;;
+  *) printf 'Unsafe Restic config mode\n' >&2; exit 1 ;;
+esac
+case $(stat -c '%a' "$RESTIC_PASSWORD_FILE") in
+  400|600) ;;
+  *) printf 'Unsafe Restic password mode\n' >&2; exit 1 ;;
+esac
 ```
 
 Never print or commit the password file or repository credentials.
@@ -588,20 +717,47 @@ python3 -m json.tool "$payload/metadata.json"
 docker compose --env-file .env down --remove-orphans
 ```
 
-Restore configuration only after reviewing differences, especially bind hosts,
-UID/GID, socket paths, and provider endpoints:
+Use the snapshot configuration as a comparison source, especially for bind
+hosts, UID/GID, socket paths, and provider endpoints:
 
 ```bash
 diff -u .env "$payload/compose.env" || true
 diff -u web-search/searxng-settings.yml "$payload/searxng-settings.yml" || true
 ```
 
-When those files are appropriate for this host, copy them deliberately. Then
-extract Hermes through a one-off container so rootless ownership is preserved:
+Do not copy these files wholesale onto a different host. Merge only the values
+that remain appropriate and preserve this host's rootless socket, UID/GID,
+paths, bind addresses, and generated secrets.
+
+Resolve the effective appdata path, move the entire current tree aside, and
+create an empty destination. This prevents removed files and database objects
+from surviving into a hybrid restore:
 
 ```bash
-cp "$payload/compose.env" .env
-cp "$payload/searxng-settings.yml" web-search/searxng-settings.yml
+appdata_value=$(awk -F= '$1 == "APPDATA_DIR" {print substr($0, length($1) + 2)}' .env)
+appdata_value=${appdata_value:-./appdata}
+case $appdata_value in
+  /*) appdata_host=$appdata_value ;;
+  *) appdata_host=$(realpath -m "$PWD/$appdata_value") ;;
+esac
+stamp=$(date +%Y%m%dT%H%M%S)
+test -d "$appdata_host"
+case $appdata_host in
+  /|"$PWD") printf 'Refusing unsafe APPDATA_DIR: %s\n' "$appdata_host" >&2; exit 1 ;;
+esac
+test -d "$appdata_host/hermes"
+test -d "$appdata_host/hindsight"
+appdata_previous="${appdata_host}.before-restore-$stamp"
+test ! -e "$appdata_previous"
+mv "$appdata_host" "$appdata_previous"
+mkdir -p "$appdata_host"
+printf 'Previous appdata: %s\n' "$appdata_previous"
+```
+
+Extract Hermes through a one-off container so archive ownership is interpreted
+inside the rootless user namespace:
+
+```bash
 docker compose --env-file .env run --rm --no-deps -T --entrypoint tar hermes \
   -C /opt/data -xzf - < "$payload/hermes-data.tar.gz"
 ```
@@ -628,14 +784,23 @@ docker compose --env-file .env exec -T firecrawl-nuq-postgres sh -lc \
   < "$payload/firecrawl-postgres.sql"
 ```
 
-The SQL import expects a fresh target database. If objects already exist, stop
-and rebuild the isolated target rather than dropping production tables in
-place.
+Because the complete appdata tree was moved aside, Firecrawl initializes a
+fresh target database before this import. If PostgreSQL reports existing-object
+collisions, stop: the target is not empty, and dropping objects in place is not
+an acceptable shortcut.
 
-Start Hindsight with an empty data directory, validate the logical export, then
-use the dry-run, pilot, and all-bank process documented above:
+Prepare the empty Hindsight directory with the same container-side ownership
+step used by setup, then start it, validate the logical export, and use the
+dry-run, pilot, and all-bank process documented above:
 
 ```bash
+mkdir -p "$appdata_host/hindsight"
+hindsight_image=$(awk -F= '$1 == "HINDSIGHT_IMAGE" {print substr($0, length($1) + 2)}' .env)
+hindsight_image=${hindsight_image:-ghcr.io/vectorize-io/hindsight:latest}
+docker run --rm --user 0:0 \
+  -v "$appdata_host/hindsight:/mnt" \
+  --entrypoint sh "$hindsight_image" \
+  -c 'chown 1000:1000 /mnt'
 docker compose --env-file .env up -d hindsight-mcp
 python3 scripts/validate-hindsight-bank-backup.py \
   --backup-dir "$payload/hindsight-logical"
@@ -656,9 +821,28 @@ payload=/path/inside/restore-root/to/weekly-raw-staging-directory
 test -f "$payload/hindsight-raw.tar.gz"
 
 docker compose --env-file .env stop hindsight-mcp
+appdata_value=$(awk -F= '$1 == "APPDATA_DIR" {print substr($0, length($1) + 2)}' .env)
+appdata_value=${appdata_value:-./appdata}
+case $appdata_value in
+  /*) appdata_host=$appdata_value ;;
+  *) appdata_host=$(realpath -m "$PWD/$appdata_value") ;;
+esac
 stamp=$(date +%Y%m%dT%H%M%S)
-mv appdata/hindsight "appdata/hindsight.before-raw-restore-$stamp"
-mkdir -p appdata/hindsight
+case $appdata_host in
+  /|"$PWD") printf 'Refusing unsafe APPDATA_DIR: %s\n' "$appdata_host" >&2; exit 1 ;;
+esac
+test -d "$appdata_host/hermes"
+test -d "$appdata_host/hindsight"
+hindsight_previous="$appdata_host/hindsight.before-raw-restore-$stamp"
+test ! -e "$hindsight_previous"
+mv "$appdata_host/hindsight" "$hindsight_previous"
+mkdir -p "$appdata_host/hindsight"
+hindsight_image=$(awk -F= '$1 == "HINDSIGHT_IMAGE" {print substr($0, length($1) + 2)}' .env)
+hindsight_image=${hindsight_image:-ghcr.io/vectorize-io/hindsight:latest}
+docker run --rm --user 0:0 \
+  -v "$appdata_host/hindsight:/mnt" \
+  --entrypoint sh "$hindsight_image" \
+  -c 'chown 1000:1000 /mnt'
 docker compose --env-file .env run --rm --no-deps -T --entrypoint tar hindsight-mcp \
   -C /home/hindsight -xzf - < "$payload/hindsight-raw.tar.gz"
 docker compose --env-file .env up -d hindsight-mcp
@@ -666,7 +850,7 @@ curl -fsS http://127.0.0.1:8888/health
 curl -fsS http://127.0.0.1:8888/v1/default/banks | python3 -m json.tool
 ```
 
-Keep `appdata/hindsight.before-raw-restore-*` until bank counts, memory
+Keep `$appdata_host/hindsight.before-raw-restore-*` until bank counts, memory
 retrieval, consolidation connectivity, and application behavior are accepted.
 Do not delete current appdata, migration backups, failed backup staging, or
 pre-restore Hindsight snapshots merely to make a restore command succeed.
