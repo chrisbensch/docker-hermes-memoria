@@ -114,51 +114,22 @@ curl -fsS -X PUT "http://127.0.0.1:8888/v1/default/banks/hermes-research" \
   -d '{}'
 ```
 
-5. Optional: expose web UIs on a trusted LAN.
+5. Optional: review UI exposure. Services bind to loopback by default. Before
+binding a UI to a trusted LAN, configure dashboard authentication and review the
+Hindsight and Headroom exposure warnings in [OPERATIONS.md](OPERATIONS.md).
 
-Set UI bind hosts in `.env`:
+## Next Steps
 
-```bash
-HERMES_DASHBOARD_BIND_HOST=0.0.0.0
-HINDSIGHT_UI_BIND_HOST=0.0.0.0
-HEADROOM_PROXY_BIND_HOST=0.0.0.0
-```
+- Migrating a host-installed Hermes deployment: follow the inventory, dry-run,
+  apply, cron, Memory Vault, and profile checks in [OPERATIONS.md](OPERATIONS.md).
+- Configuring or resetting dashboard authentication: use the dashboard auth and
+  direct login verification procedure in [OPERATIONS.md](OPERATIONS.md).
+- Enabling daily logical and weekly raw Restic backups: configure the external
+  Restic environment, then install and inspect the user timers as documented in
+  [OPERATIONS.md](OPERATIONS.md).
+- Proving recovery: restore a snapshot into an isolated directory and run the
+  Hindsight validation and pilot-bank workflow in [OPERATIONS.md](OPERATIONS.md).
 
-Hermes Dashboard also requires auth before it will bind publicly. Generate a
-password hash:
-
-```bash
-docker compose --env-file .env \
-  exec hermes python -c "from plugins.dashboard_auth.basic import hash_password; print(hash_password('your-password'))"
-```
-
-Add the hash to `appdata/hermes/config.yaml`:
-
-```yaml
-dashboard:
-  basic_auth:
-    username: admin
-    password_hash: "paste-the-hash-here"
-```
-
-Restart the stack:
-
-```bash
-docker compose --env-file .env up -d --force-recreate
-```
-
-Use the server LAN IP, for example from `ip route get 1.1.1.1`:
-
-```text
-Hermes Dashboard:        http://<server-ip>:9119/login?next=%2F
-Hindsight Control Plane: http://<server-ip>:9999
-Headroom stats:          http://<server-ip>:8787/stats
-Headroom history:        http://<server-ip>:8787/stats-history
-```
-
-Use the explicit `/login?next=%2F` dashboard URL for basic auth. The dashboard
-root can auto-redirect through the OAuth route first, which may return an
-internal server error when only username/password auth is configured.
-
-For details on dashboards, provider examples, ports, and profile wiring, see
-`README.md`.
+For architecture, provider examples, ports, and profile wiring, see
+[README.md](README.md). Contributor and automation-agent conventions are in
+[AGENTS.md](AGENTS.md).
