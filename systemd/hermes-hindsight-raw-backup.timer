@@ -1,0 +1,10 @@
+[Unit]
+Description=Run weekly raw Hindsight checkpoint
+
+[Timer]
+OnCalendar=Sat *-*-* 08:00:00 Asia/Tokyo
+Persistent=true
+Unit=hermes-hindsight-raw-backup.service
+
+[Install]
+WantedBy=timers.target
