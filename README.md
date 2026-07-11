@@ -29,6 +29,8 @@ start fresh.
 - `hermes-data/profile-overrides/` contains optional per-profile template overrides, such as the research-specific `SOUL.md`; start new migrations from `hermes-data/profile-overrides/_TEMPLATE/SOUL.md`.
 - `scripts/create-profile.sh` scaffolds additional rootless profile directories with pinned Hindsight bank URLs and Headroom MCP config.
 - `scripts/create-profile-rootless.sh` is a compatibility wrapper for the same rootless profile scaffold.
+- `scripts/fix-obsidian-vault-permissions.sh` applies and verifies the shared
+  host/Hermes write policy for the Obsidian vault.
 - `hermes-config-fragment.yaml` contains the web/browser and MCP blocks if you want to merge them into an existing config.
 - `.env.example` contains Compose-level settings such as image names and ports.
 - `hermes-data/.env.example` is copied to `appdata/hermes/.env` for Hermes runtime provider secrets.
@@ -79,6 +81,15 @@ Hermes reaches Firecrawl and Camofox on the Compose network as
 In rootless Docker, `./setup.sh` prepares `appdata/hindsight` ownership through
 a short one-off container so Hindsight's unprivileged UID can write its embedded
 Postgres data without requiring host-side `sudo chown`.
+
+The Obsidian vault has a separate shared-write policy. Inside the Hermes
+container it is owned by `hermes:root`: container `hermes` maps to a dynamic
+subordinate host UID, while container group `root` maps to the deployment
+user's host group. Setgid directories preserve that group and default POSIX
+ACLs preserve group write access when Hermes creates files with umask `0022`.
+Ubuntu hosts must provide `setfacl` from the `acl` package. Setup, migration,
+and `scripts/normalize-appdata-permissions.sh` invoke the vault permission
+helper automatically.
 
 Because Hermes is itself containerized, `docker-compose.yml` mounts the Docker socket into the Hermes container. This lets Hermes run `docker exec -i hermes-headroom-mcp headroom mcp serve` for Headroom's stdio MCP server. Treat that socket mount as powerful host access and keep this stack on a machine/user boundary you trust.
 
@@ -155,7 +166,9 @@ Use the guided setup for a new rootless deployment:
 
 It prepares the local Compose environment, Firecrawl source, generated SearXNG
 settings, Hermes web-service URLs, profile scaffold, and rootless bind-mount
-ownership. Use `./setup.sh --check` for a read-only preflight. The complete
+ownership, including the shared Obsidian vault policy after scaffolding. Install
+Ubuntu's `acl` package first so `setfacl` is available. Use `./setup.sh --check`
+for a read-only preflight. The complete
 first-run sequence and service checks are in [QUICKSTART.md](QUICKSTART.md);
 ongoing stack and dashboard commands are in [OPERATIONS.md](OPERATIONS.md).
 
@@ -271,7 +284,9 @@ The supported deployment path is rootless Docker for the deployment user.
 must load `.env`. Bind-mounted runtime state can have user-namespace mapped
 numeric owners; that is expected and must not be "fixed" recursively from the
 host. Use `scripts/normalize-appdata-permissions.sh` when host group readability
-needs repair.
+needs repair; it finishes by applying the vault-specific shared-write policy.
+For direct vault repair, use `scripts/fix-obsidian-vault-permissions.sh`, never
+a host-side recursive ownership command against a container path.
 
 The rootless profile scaffold pins Hindsight to `hermes-<profile>`, uses
 Compose service names for Hindsight, Headroom, Firecrawl, Camofox, and SearXNG,

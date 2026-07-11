@@ -8,8 +8,12 @@ exposure, prepares Firecrawl/SearXNG/Camofox, configures Hermes web backends,
 and then prints the exact Compose command, run:
 
 ```bash
+sudo apt-get install -y acl
 ./setup.sh
 ```
+
+The `acl` package supplies `setfacl`, which setup uses to keep the Obsidian
+vault writable by both container Hermes and the host deployment user.
 
 To inspect a clone without writing files, run:
 
@@ -94,6 +98,11 @@ docker compose --env-file .env up -d
 
 ./scripts/normalize-appdata-permissions.sh
 ```
+
+Normalization applies the same `hermes:root`, setgid, and default-ACL vault
+policy used automatically by setup and migration. See
+[OPERATIONS.md](OPERATIONS.md#obsidian-vault-permissions) for diagnosis or a
+direct repair with `scripts/fix-obsidian-vault-permissions.sh`.
 
 Confirm Hermes sees the provider:
 

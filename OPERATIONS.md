@@ -299,6 +299,77 @@ find appdata/hermes/obsidian-memory-vault -type f | wc -l
 du -sh appdata/hermes/obsidian-memory-vault
 ```
 
+### Obsidian Vault Permissions
+
+The shared vault is intentionally writable from both sides of the rootless
+bind mount. Inside the container its ownership is `hermes:root`. Container
+`hermes` maps to a dynamically assigned subordinate host UID, while container
+group `root` maps to the deployment user's host group. Directories are setgid
+so new entries inherit that group. Named and default POSIX ACLs keep the mapped
+Hermes UID and owning group writable even when Hermes creates files with umask
+`0022`.
+
+Install the Ubuntu ACL tools once on the host:
+
+```bash
+command -v setfacl >/dev/null || sudo apt-get install -y acl
+```
+
+Resolve the configured host path and inspect only its metadata. Numeric owners
+that differ between host and container are expected:
+
+```bash
+appdata_value=$(sed -n 's/^APPDATA_DIR=//p' .env | tail -n 1)
+appdata_value=${appdata_value:-./appdata}
+case $appdata_value in
+  /*) appdata_host=$appdata_value ;;
+  *) appdata_host=$PWD/$appdata_value ;;
+esac
+vault_host=$appdata_host/hermes/obsidian-memory-vault
+
+test -d "$vault_host"
+stat -c 'host: %u:%g %a %n' "$vault_host"
+getfacl -ncp "$vault_host"
+docker compose --env-file .env exec -T hermes \
+  stat -c 'container: %u:%g %a %n' /opt/data/obsidian-memory-vault
+```
+
+Test an unprivileged Hermes create/delete without printing vault contents:
+
+```bash
+hermes_uid=$(sed -n 's/^HERMES_UID=//p' .env | tail -n 1)
+test -n "$hermes_uid"
+docker compose --env-file .env exec -T -u "$hermes_uid:$hermes_uid" hermes \
+  sh -c 'umask 0022; f=/opt/data/obsidian-memory-vault/.permission-diagnosis-$$; : > "$f" && rm -f "$f"'
+```
+
+If either identity cannot write, apply the guarded repair from the repository
+root. It derives the mapped Hermes UID, applies recursive access ACLs plus
+default directory ACLs, restores `hermes:root` in-container ownership, and
+verifies cross-writes in both directions:
+
+```bash
+./scripts/fix-obsidian-vault-permissions.sh
+```
+
+Expected output includes both `Host deployment-user write: ok` and
+`Container Hermes write: ok`. Verify host access independently:
+
+```bash
+host_test=$vault_host/.permission-host-diagnosis-$$
+trap 'rm -f "$host_test"' EXIT
+(umask 0022 && : > "$host_test")
+rm -f "$host_test"
+trap - EXIT
+```
+
+Do **not** run
+`sudo chown -R hermes:hermes /opt/data/obsidian-memory-vault`. `/opt/data/...`
+is a container path, the host may have no `hermes` account, and guessed host
+ownership breaks rootless user-namespace mappings. The helper is also called
+automatically after setup scaffolding and applied migration, and runs last in
+`scripts/normalize-appdata-permissions.sh`.
+
 Review migrated cron definitions and scripts for stale host paths or external
 service addresses before allowing scheduled work to run:
 
@@ -385,8 +456,11 @@ and the old active profile is restored. Use `MIGRATE_SECRETS=0`,
 `MIGRATE_BULKY_DIRS=0`, or `MIGRATE_REWRITE_TEXT=0` only after deliberately
 reviewing the resulting omissions.
 
-Start the stack, normalize host-group read access through the containers, and
-repeat the profile, vault, cron, integrated URL, and bank checks above:
+The applied migration invokes the vault permission helper after copying profile,
+vault, cron, and active-profile state; `--dry-run` reports that operation without
+changing metadata. Start the stack, normalize general appdata access and the
+shared vault policy through the containers, then repeat the profile, vault,
+cron, integrated URL, and bank checks above:
 
 ```bash
 docker compose --env-file .env config --quiet
