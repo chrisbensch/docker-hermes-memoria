@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script=scripts/backup-hermes-data.sh
+
+bash -n "$script"
+grep -Fq 'flock' "$script"
+grep -Fq 'backup-hindsight-banks.py' "$script"
+grep -Fq 'validate-hindsight-bank-backup.py' "$script"
+grep -Fq 'firecrawl-nuq-postgres' "$script"
+grep -Fq 'headroom-proxy' "$script"
+grep -Fq -- '--exclude=./logs' "$script"
+grep -Fq -- '--exclude=./.cache' "$script"
+grep -Fq -- '--exclude=./audio_cache' "$script"
+grep -Fq -- '--exclude=./image_cache' "$script"
+grep -Fq -- '--exclude=./lazy-packages' "$script"
+! grep -Fq 'restic backup appdata' "$script"
+! grep -Fq 'firecrawl-redis' "$script"
+! grep -Fq 'firecrawl-rabbitmq' "$script"
+
+"$script" --help | grep -Fq 'daily|weekly-raw'
