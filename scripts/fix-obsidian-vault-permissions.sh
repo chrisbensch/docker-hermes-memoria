@@ -112,7 +112,7 @@ rm -f -- "$mapping_file"
 
 # The named user maps back to container Hermes, while the owning group maps to
 # the deployment user group. Defaults keep both paths writable under umask 0022.
-setfacl -R -m "u:$mapped_hermes_uid:rwX,g::rwX,m::rwx,o::---" "$vault_dir"
+setfacl -R -m "u:$mapped_hermes_uid:rwX,g::rwX,m::rwX,o::---" "$vault_dir"
 find "$vault_dir" -type d -exec \
   setfacl -m "u::rwx,u:$mapped_hermes_uid:rwx,g::rwx,m::rwx,o::---,d:u::rwx,d:u:$mapped_hermes_uid:rwx,d:g::rwx,d:m::rwx,d:o::---" {} +
 
