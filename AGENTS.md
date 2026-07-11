@@ -10,7 +10,9 @@ SearXNG, and Camofox dependencies as a rootless Docker Compose stack.
 - `web-search/` contains tracked SearXNG and proxy templates. Generated
   `web-search/searxng-settings.yml` and `.firecrawl-src/` are ignored.
 - `scripts/` contains profile, migration, Hindsight export/restore, permission,
-  Restic backup, and timer-installation utilities.
+  Restic backup, and timer-installation utilities. Use
+  `scripts/fix-obsidian-vault-permissions.sh` as the canonical shared-vault
+  ownership operation.
 - `systemd/` contains user services and timers for daily logical backups and
   weekly raw Hindsight checkpoints.
 - `tests/` contains Bash integration/static checks and Python `unittest` tests.
@@ -67,6 +69,13 @@ timers. Migration work starts with
 - Rootless container data can display numeric ownership that differs from the
   host user. Treat that as expected; use the provided normalization script only
   when the documented workflow calls for it.
+- The Obsidian vault is `hermes:root` inside the container. Container `hermes`
+  maps to a subordinate host UID, while container group `root` maps to the
+  deployment user's host group. Setgid directories and default POSIX ACLs keep
+  both identities writable when Hermes creates files with umask `0022`.
+- Do not run host `sudo chown` against `/opt/data`, guess a subordinate UID, or
+  assume a host `hermes` account exists. Install Ubuntu's `acl` package and use
+  `scripts/fix-obsidian-vault-permissions.sh` for vault repair.
 - Never delete, replace, move, or recursively change ownership of `appdata/`
   without first creating and verifying a timestamped copy or Restic snapshot.
 - Preserve migrated host configuration under `host-migration/` and existing
