@@ -69,6 +69,18 @@ grep -Fq 'fix-obsidian-vault-permissions.sh' scripts/migrate-host-hermes-data.sh
 grep -Fq 'fix-obsidian-vault-permissions.sh' scripts/normalize-appdata-permissions.sh
 grep -Fq '[dry-run] fix Obsidian vault permissions' scripts/migrate-host-hermes-data.sh
 
+headroom_command='exec docker exec -i -e HEADROOM_PROXY_URL=http://headroom-proxy:8787 hermes-headroom-mcp headroom mcp serve'
+for config in \
+    hermes-data/profile-templates/rootless/config.yaml \
+    hermes-config-fragment.yaml; do
+  grep -Fq 'command: "sg"' "$config"
+  grep -Fq -- '- "hostdocker"' "$config"
+  grep -Fq -- '- "-c"' "$config"
+  grep -Fq -- "- \"$headroom_command\"" "$config"
+  headroom_block=$(sed -n '/^  headroom:/,$p' "$config")
+  ! grep -Fq 'command: "docker"' <<< "$headroom_block"
+done
+
 sqlite_test_dir=$(mktemp -d)
 trap 'rm -rf "$sqlite_test_dir"' EXIT
 python3 - "$sqlite_test_dir/source.db" <<'PY'
