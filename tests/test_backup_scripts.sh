@@ -14,6 +14,9 @@ grep -Fq -- '--exclude=./.cache' "$script"
 grep -Fq -- '--exclude=./audio_cache' "$script"
 grep -Fq -- '--exclude=./image_cache' "$script"
 grep -Fq -- '--exclude=./lazy-packages' "$script"
+grep -Fq -- "--exclude='./profiles/*/state.db*'" "$script"
+grep -Fq 'export-sqlite-database.py' "$script"
+grep -Fq 'source.backup(target' scripts/export-sqlite-database.py
 ! grep -Fq 'restic backup appdata' "$script"
 ! grep -Fq 'firecrawl-redis' "$script"
 ! grep -Fq 'firecrawl-rabbitmq' "$script"
@@ -29,3 +32,23 @@ grep -Fq 'scripts/install-backup-timers.sh' README.md
 grep -Fq 'restic check' README.md
 grep -Fq '07:45 JST' README.md
 grep -Fq 'weekly raw Hindsight' README.md
+
+sqlite_test_dir=$(mktemp -d)
+trap 'rm -rf "$sqlite_test_dir"' EXIT
+python3 - "$sqlite_test_dir/source.db" <<'PY'
+import sqlite3
+import sys
+
+with sqlite3.connect(sys.argv[1]) as connection:
+    connection.execute("CREATE TABLE backup_test (value TEXT NOT NULL)")
+    connection.execute("INSERT INTO backup_test VALUES ('consistent')")
+PY
+python3 scripts/export-sqlite-database.py "$sqlite_test_dir/source.db" > "$sqlite_test_dir/backup.db"
+python3 - "$sqlite_test_dir/backup.db" <<'PY'
+import sqlite3
+import sys
+
+with sqlite3.connect(sys.argv[1]) as connection:
+    assert connection.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+    assert connection.execute("SELECT value FROM backup_test").fetchone() == ("consistent",)
+PY
