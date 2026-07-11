@@ -182,6 +182,12 @@ else
 fi
 
 restic backup "${tags[@]}" "$staging"
-restic forget --prune --keep-daily 14 --keep-weekly 8 --keep-monthly 12
+if [[ $mode == daily ]]; then
+  restic forget --prune --tag daily --group-by host,tags \
+    --keep-daily 14 --keep-weekly 8 --keep-monthly 12
+else
+  restic forget --prune --tag weekly --group-by host,tags \
+    --keep-weekly 8 --keep-monthly 12
+fi
 restic snapshots --tag hermes --latest 1
 success=yes
