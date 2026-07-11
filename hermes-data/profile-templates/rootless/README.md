@@ -7,7 +7,8 @@ This profile is scaffolded for the compose-managed rootless Hermes stack.
 - Hermes built-in memory stays profile-local in this directory.
 - Hindsight bank ID: `__BANK_ID__`
 - Hindsight MCP URL: `http://hindsight-mcp:8888/mcp/__BANK_ID__/`
-- Headroom MCP is configured in `config.yaml` as a Docker-backed stdio server.
+- Headroom MCP is configured in `config.yaml` as a Docker-backed stdio server
+  that reacquires the rootless socket group with `sg hostdocker`.
 - Shared Obsidian vault inside Hermes: `__OBSIDIAN_VAULT_PATH__`
 - This profile's Obsidian index: `__OBSIDIAN_VAULT_PATH__/Profiles/__PROFILE__/Index.md`
 
@@ -55,8 +56,14 @@ Do not store secrets, API keys, or credentials in Obsidian notes.
 Headroom is wired as:
 
 ```text
-docker exec -i -e HEADROOM_PROXY_URL=http://headroom-proxy:8787 hermes-headroom-mcp headroom mcp serve
+sg hostdocker -c 'exec docker exec -i -e HEADROOM_PROXY_URL=http://headroom-proxy:8787 hermes-headroom-mcp headroom mcp serve'
 ```
 
+The `hermes-headroom-mcp` container normally sleeps until this stdio command is
+started. The rootless Docker socket is already mounted in Hermes, and the image
+creates `hostdocker` from that socket dynamically. `sg` is required because
+some agent and cron execution paths drop supplementary groups. Do not hard-code
+a socket GID, add another socket mount, or point MCP at the HTTP proxy.
+
 The long-running `headroom-proxy` Compose service must be running for proxy
-stats and proxy-backed retrieval.
+stats and proxy-backed retrieval; it is not an HTTP MCP endpoint.

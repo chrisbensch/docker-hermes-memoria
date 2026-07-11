@@ -31,6 +31,8 @@ By default it archives old files under `reset-backups/` and leaves the repo read
 for another `./setup.sh` run.
 
 Headroom's MCP container and HTTP proxy/stats service start with the base stack.
+The MCP container normally sleeps until Hermes starts its stdio command; this
+is healthy and does not require another Docker socket or an HTTP MCP URL.
 On minimal QEMU/virtual CPU profiles, the published Headroom proxy image can
 exit with `SIGILL`. Use host CPU passthrough and verify it with
 `curl -fsS http://127.0.0.1:8787/readyz`.
@@ -110,6 +112,25 @@ Confirm Hermes sees the provider:
 docker compose --env-file .env exec hermes hermes profile list
 docker compose --env-file .env exec hermes hermes status
 ```
+
+Confirm the active profile can start Headroom MCP through the rootless socket:
+
+```bash
+docker compose --env-file .env exec -T hermes \
+  /package/admin/s6/command/s6-setuidgid hermes \
+  hermes -p research mcp test headroom
+```
+
+For profiles copied from an older deployment, run the updater dry-run before
+applying it. It creates timestamped backups when changes are written:
+
+```bash
+python3 scripts/fix-headroom-mcp-command.py --dry-run
+python3 scripts/fix-headroom-mcp-command.py
+```
+
+See [OPERATIONS.md](OPERATIONS.md#headroom-mcp-stdio-and-socket-access) for
+selected-profile updates and socket diagnostics.
 
 4. Check services and initialize the Hindsight bank if the profile script
 reported that bank creation was skipped:

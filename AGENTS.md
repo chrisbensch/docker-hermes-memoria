@@ -12,7 +12,8 @@ SearXNG, and Camofox dependencies as a rootless Docker Compose stack.
 - `scripts/` contains profile, migration, Hindsight export/restore, permission,
   Restic backup, and timer-installation utilities. Use
   `scripts/fix-obsidian-vault-permissions.sh` as the canonical shared-vault
-  ownership operation.
+  ownership operation. Use `scripts/fix-headroom-mcp-command.py` to migrate
+  existing profile configs to the rootless Headroom stdio command.
 - `systemd/` contains user services and timers for daily logical backups and
   weekly raw Hindsight checkpoints.
 - `tests/` contains Bash integration/static checks and Python `unittest` tests.
@@ -51,6 +52,14 @@ timers. Migration work starts with
 `scripts/collect-host-migration-inventory.sh`, then uses
 `scripts/migrate-host-hermes-data.sh --dry-run` before applying changes.
 
+Headroom MCP is intentionally launched on demand over stdio in the sleeping
+`hermes-headroom-mcp` container. The rootless Docker socket is already mounted
+in Hermes. Profile configs must launch it through `sg hostdocker -c` because
+some Hermes execution paths drop supplementary groups before starting MCP
+subprocesses. Do not add a second socket mount, hard-code a mapped socket GID,
+or describe `headroom-proxy` as an HTTP MCP endpoint. The proxy provides LLM
+proxy and statistics APIs; it is not the MCP transport.
+
 ## Coding Conventions
 
 - Use two-space indentation in YAML and preserve existing Compose service names
@@ -76,6 +85,10 @@ timers. Migration work starts with
 - Do not run host `sudo chown` against `/opt/data`, guess a subordinate UID, or
   assume a host `hermes` account exists. Install Ubuntu's `acl` package and use
   `scripts/fix-obsidian-vault-permissions.sh` for vault repair.
+- Preserve the `sg hostdocker` Headroom command in profile templates and live
+  configs. Diagnose it with the profile-aware `hermes -p <profile> mcp test
+  headroom` command documented in `OPERATIONS.md`; `docker compose exec -u`
+  can drop supplementary groups and produce a misleading socket failure.
 - Never delete, replace, move, or recursively change ownership of `appdata/`
   without first creating and verifying a timestamped copy or Restic snapshot.
 - Preserve migrated host configuration under `host-migration/` and existing
