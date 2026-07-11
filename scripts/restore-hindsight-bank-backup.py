@@ -135,11 +135,14 @@ def preflight(client: Any, selected_banks: list[str]) -> dict[str, Any]:
     openapi = client.request_json("GET", "/openapi.json")
     paths = openapi.get("paths")
     required = {
-        "/v1/default/banks/{bank_id}": "put",
-        "/v1/default/banks/{bank_id}/document-transfer": "post",
-        "/v1/default/banks/{bank_id}/operations/{operation_id}": "get",
+        "/v1/default/banks/{bank_id}": {"put"},
+        "/v1/default/banks/{bank_id}/config": {"get", "patch", "delete"},
+        "/v1/default/banks/{bank_id}/document-transfer": {"post"},
+        "/v1/default/banks/{bank_id}/operations/{operation_id}": {"get"},
     }
-    if not isinstance(paths, dict) or any(method not in paths.get(path, {}) for path, method in required.items()):
+    if not isinstance(paths, dict) or any(
+        not methods.issubset(paths.get(path, {})) for path, methods in required.items()
+    ):
         raise RestoreError("Destination OpenAPI is missing required restore endpoints")
     banks_response = client.request_json("GET", "/v1/default/banks")
     existing = banks_response.get("banks")
@@ -235,29 +238,38 @@ def run_restore(
         bank_report: dict[str, Any] = {"expected": counts, "status": "creating"}
         report["banks"][bank_id] = bank_report
         client.request_json("PUT", f"/v1/default/banks/{bank_id}", {})
-        bank_report["target_config_before_import"] = client.request_json("GET", f"/v1/default/banks/{bank_id}/config")
-        bank_report["status"] = "importing"
-        submission = client.request_multipart(
-            "POST",
-            f"/v1/default/banks/{bank_id}/document-transfer?on_conflict=skip",
-            "file",
-            bank_dir / "document-transfer.zip",
+        config_path = f"/v1/default/banks/{bank_id}/config"
+        bank_report["target_config_before_import"] = client.request_json("GET", config_path)
+        bank_report["status"] = "disabling_auto_consolidation"
+        bank_report["temporary_config"] = client.request_json(
+            "PATCH", config_path, {"updates": {"enable_auto_consolidation": False}}
         )
-        operation_id = submission.get("operation_id")
-        if not isinstance(operation_id, str) or not operation_id:
-            raise RestoreError(f"{bank_id}: document import did not return operation_id")
-        bank_report["operation_id"] = operation_id
-        bank_report["operation"] = poll_operation(client, bank_id, operation_id, timeout_seconds, sleep_fn)
-        document_count = len(fetch_all_items(client, f"/v1/default/banks/{bank_id}/documents"))
-        memory_count = len(fetch_all_items(client, f"/v1/default/banks/{bank_id}/memories/list"))
-        entity_count = len(fetch_all_items(client, f"/v1/default/banks/{bank_id}/entities"))
-        if document_count != counts["documents"]:
-            raise RestoreError(f"{bank_id}: expected {counts['documents']} documents, got {document_count}")
-        expected_memories = counts["facts"] + counts["observations"]
-        if memory_count != expected_memories:
-            raise RestoreError(f"{bank_id}: expected {expected_memories} memories, got {memory_count}")
-        bank_report["counts"] = {"documents": document_count, "memories": memory_count, "entities": entity_count}
-        bank_report["status"] = "completed"
+        try:
+            bank_report["status"] = "importing"
+            submission = client.request_multipart(
+                "POST",
+                f"/v1/default/banks/{bank_id}/document-transfer?on_conflict=skip",
+                "file",
+                bank_dir / "document-transfer.zip",
+            )
+            operation_id = submission.get("operation_id")
+            if not isinstance(operation_id, str) or not operation_id:
+                raise RestoreError(f"{bank_id}: document import did not return operation_id")
+            bank_report["operation_id"] = operation_id
+            bank_report["operation"] = poll_operation(client, bank_id, operation_id, timeout_seconds, sleep_fn)
+            document_count = len(fetch_all_items(client, f"/v1/default/banks/{bank_id}/documents"))
+            memory_count = len(fetch_all_items(client, f"/v1/default/banks/{bank_id}/memories/list"))
+            entity_count = len(fetch_all_items(client, f"/v1/default/banks/{bank_id}/entities"))
+            if document_count != counts["documents"]:
+                raise RestoreError(f"{bank_id}: expected {counts['documents']} documents, got {document_count}")
+            expected_memories = counts["facts"] + counts["observations"]
+            if memory_count != expected_memories:
+                raise RestoreError(f"{bank_id}: expected {expected_memories} memories, got {memory_count}")
+            bank_report["counts"] = {"documents": document_count, "memories": memory_count, "entities": entity_count}
+            bank_report["status"] = "completed"
+        finally:
+            # The bank is new, so deleting its temporary override restores its normal defaults.
+            bank_report["config_after_import"] = client.request_json("DELETE", config_path)
     return report
 
 

@@ -93,6 +93,7 @@ class RecordingClient:
             return {
                 "paths": {
                     "/v1/default/banks/{bank_id}": {"put": {}},
+                    "/v1/default/banks/{bank_id}/config": {"get": {}, "patch": {}, "delete": {}},
                     "/v1/default/banks/{bank_id}/document-transfer": {"post": {}},
                     "/v1/default/banks/{bank_id}/operations/{operation_id}": {"get": {}},
                 }
@@ -102,6 +103,10 @@ class RecordingClient:
         if method == "PUT" and bare_path == "/v1/default/banks/hermes-test":
             return {"bank_id": "hermes-test"}
         if method == "GET" and bare_path == "/v1/default/banks/hermes-test/config":
+            return {"bank_id": "hermes-test", "config": {}, "overrides": {}}
+        if method == "PATCH" and bare_path == "/v1/default/banks/hermes-test/config":
+            return {"bank_id": "hermes-test", "config": {"enable_auto_consolidation": False}, "overrides": payload["updates"]}
+        if method == "DELETE" and bare_path == "/v1/default/banks/hermes-test/config":
             return {"bank_id": "hermes-test", "config": {}, "overrides": {}}
         if method == "GET" and bare_path == "/v1/default/banks/hermes-test/operations/op-1":
             return {"operation_id": "op-1", "status": self.operation_status, "result_metadata": {}}
@@ -160,6 +165,11 @@ class RestoreTests(unittest.TestCase):
         self.assertEqual(events, ["snapshot"])
         self.assertEqual(report["banks"]["hermes-test"]["counts"], {"documents": 1, "memories": 2, "entities": 0})
         self.assertGreater(first_put, 0)
+        patch_index = next(index for index, call in enumerate(client.calls) if call[0] == "PATCH")
+        import_index = next(index for index, call in enumerate(client.calls) if call[1].startswith("/v1/default/banks/hermes-test/document-transfer"))
+        delete_index = next(index for index, call in enumerate(client.calls) if call[0] == "DELETE")
+        self.assertLess(patch_index, import_index)
+        self.assertGreater(delete_index, import_index)
 
     def test_failed_operation_stops_restore(self):
         with tempfile.TemporaryDirectory() as temporary:

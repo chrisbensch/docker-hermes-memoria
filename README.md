@@ -307,6 +307,49 @@ Repeat that command for any bank the script reported as skipped, such as
 The local dashboard service starts with the base stack and is published on host
 loopback at `http://127.0.0.1:${HERMES_DASHBOARD_HOST_PORT:-9119}`.
 
+## Hindsight Bank Restore
+
+Use the guarded restore utilities when migrating a Hindsight document-transfer
+backup into a new, empty Hindsight instance. The validator checks the manifest,
+archive checksums, and preserved observations without contacting any API:
+
+```bash
+python3 scripts/validate-hindsight-bank-backup.py \
+  --backup-dir tmp/hindsight-bank-backups/<backup-name> \
+  --report tmp/hindsight-bank-backups/<backup-name>/validation-report.json
+```
+
+Next, run a read-only target preflight. It refuses banks that already exist and
+confirms that the destination supports the document-transfer API:
+
+```bash
+python3 scripts/restore-hindsight-bank-backup.py \
+  --backup-dir tmp/hindsight-bank-backups/<backup-name> \
+  --api-url http://127.0.0.1:8888 \
+  --report tmp/hindsight-bank-backups/<backup-name>/target-dry-run.json
+```
+
+After reviewing the dry-run report, restore one pilot bank, then the remaining
+banks. `--apply` creates a timestamped archive of `appdata/hindsight` under
+`tmp/hindsight-target-pre-restore-*` before any target write. The script never
+deletes or overwrites an existing bank, validates each imported document and
+memory count, and imports archived observations with the documents.
+
+```bash
+python3 scripts/restore-hindsight-bank-backup.py \
+  --backup-dir tmp/hindsight-bank-backups/<backup-name> \
+  --api-url http://127.0.0.1:8888 \
+  --bank hermes-maestro \
+  --apply
+```
+
+During import, the script temporarily disables automatic consolidation for each
+new bank and removes that temporary override after count verification. This
+keeps a restore from generating new derived observations or failed LLM jobs.
+After the restore, verify Hindsight's LLM URL is reachable from the host and
+container before manually requesting any consolidation or consolidation
+recovery.
+
 ## Rootless Docker Setup
 
 Use this path when the Ubuntu host runs the Docker daemon in rootless mode for
