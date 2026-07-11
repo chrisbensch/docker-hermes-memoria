@@ -2,9 +2,20 @@
 
 This bundle targets an Ubuntu Linux server or desktop where Hermes Agent is not installed directly on the host. Hermes and the long-running sidecars run through Docker Compose; Headroom MCP runs inside a Compose-managed Headroom container and Hermes connects to it with `docker exec`.
 
-For the shortest setup path, run `./setup.sh` or start with `QUICKSTART.md`.
+For the shortest setup path, run `./setup.sh` or start with [QUICKSTART.md](QUICKSTART.md).
 If a setup attempt gets messy, run `./reset.sh` to archive generated state and
 start fresh.
+
+## Guide Map
+
+- [QUICKSTART.md](QUICKSTART.md) is the shortest path from a fresh clone to a
+  healthy stack.
+- [OPERATIONS.md](OPERATIONS.md) is the day-two runbook for health checks,
+  migration, dashboard authentication, backups, and recovery.
+- [AGENTS.md](AGENTS.md) defines repository conventions, tests, and safety rules
+  for contributors and automation agents.
+- [`docs/superpowers/`](docs/superpowers/) contains the design and implementation
+  history behind major changes.
 
 ## Layout
 
@@ -134,237 +145,75 @@ Compose service names are the stable names to use for internal addressing. Do
 not depend on generated container names or container IP addresses. Use service
 names such as `hindsight-mcp`, `headroom-proxy`, `firecrawl-api`, and `camofox`.
 
-## Fresh Ubuntu Setup
+## Fresh Setup
 
-These steps assume you have copied this directory to a new Ubuntu server or desktop and Docker is already installed.
-
-For guided setup, run:
+Use the guided setup for a new rootless deployment:
 
 ```bash
 ./setup.sh
 ```
 
-The script prompts for profile name, provider settings, UI exposure,
-generates web-search secrets, clones the Firecrawl build source, configures
-Hermes to use Firecrawl/Camofox, and prints the Compose command to run. Use the
-manual steps below when you want to edit each file yourself.
+It prepares the local Compose environment, Firecrawl source, generated SearXNG
+settings, Hermes web-service URLs, profile scaffold, and rootless bind-mount
+ownership. Use `./setup.sh --check` for a read-only preflight. The complete
+first-run sequence and service checks are in [QUICKSTART.md](QUICKSTART.md);
+ongoing stack and dashboard commands are in [OPERATIONS.md](OPERATIONS.md).
 
-To check a clone or migrated checkout without changing files, run:
+`./reset.sh` archives generated state before preparing another setup attempt.
+Treat `./reset.sh --hard` as destructive because it removes local runtime data.
 
-```bash
-./setup.sh --check
-```
+## Host Migration
 
-The check reports missing generated local files such as `.env`,
-`web-search/searxng-settings.yml`, `.firecrawl-src`, and `appdata/hindsight`
-before Compose fails on a bind mount or build context.
+The migration tools preserve all named profiles by default, merge the old
+Memory Vault into `appdata/hermes/obsidian-memory-vault`, retain previous host
+configs as `config.host-migration.yaml`, and rewrite known host-only paths and
+old web-service URLs for the integrated Firecrawl, Camofox, and SearXNG stack.
 
-To reset a failed or experimental setup:
-
-```bash
-./reset.sh
-```
-
-The reset script stops Compose services, archives generated files under
-`reset-backups/`, keeps tracked templates and seed configs, and then points you
-back to `./setup.sh`. Use `./reset.sh --hard` only when you also want to
-permanently delete local runtime files such as `appdata/`; `--volumes` is only
-for cleaning up legacy Docker named volumes from older revisions.
-
-1. Enter the stack directory and confirm the Docker Compose plugin is available:
+Inventory the old host first, then dry-run the copy from the new checkout:
 
 ```bash
-cd hermes-compose-mcp
-docker compose version
+HERMES_HOST_HOME=/path/to/.hermes \
+HERMES_MEMORY_VAULT=/path/to/Memory_Vault \
+  ./scripts/collect-host-migration-inventory.sh
+
+OLD_HERMES_HOME=/path/to/.hermes \
+OLD_MEMORY_VAULT=/path/to/Memory_Vault \
+  ./scripts/migrate-host-hermes-data.sh --dry-run
 ```
 
-If `docker compose` is missing, install the Compose plugin for your Docker installation before continuing.
-
-2. Create the Compose env file, seed the writable Hermes config, and prepare the
-web-search assets:
-
-```bash
-cp .env.example .env
-sed -i "s/^HERMES_UID=.*/HERMES_UID=$(id -u)/" .env
-sed -i "s/^HERMES_GID=.*/HERMES_GID=$(id -g)/" .env
-sed -i "s|^DOCKER_SOCK=.*|DOCKER_SOCK=/run/user/$(id -u)/docker.sock|" .env
-test -S "/run/user/$(id -u)/docker.sock"
-mkdir -p appdata/hermes/obsidian-memory-vault appdata/hindsight appdata/headroom appdata/firecrawl-redis appdata/firecrawl-rabbitmq appdata/firecrawl-postgres
-cp -n hermes-data/config.rootless.yaml appdata/hermes/config.yaml
-cp web-search/searxng-settings.template.yml web-search/searxng-settings.yml
-secret=$(openssl rand -hex 32)
-sed -i "s/CHANGE-ME-TO-A-RANDOM-SECRET/$secret/" web-search/searxng-settings.yml
-git clone --depth 1 https://github.com/firecrawl/firecrawl.git .firecrawl-src
-```
-
-3. Edit `.env` and set `HINDSIGHT_API_LLM_API_KEY`, or change `HINDSIGHT_API_LLM_PROVIDER`, `HINDSIGHT_API_LLM_MODEL`, and `HINDSIGHT_API_LLM_BASE_URL` for another provider.
-
-For LM Studio running on the Docker host, use the container-reachable host alias:
-
-```bash
-HINDSIGHT_API_LLM_PROVIDER=lmstudio
-HINDSIGHT_API_LLM_MODEL=your-local-model
-HINDSIGHT_API_LLM_BASE_URL=http://host.docker.internal:1234/v1
-HINDSIGHT_API_LLM_API_KEY=
-```
-
-For DeepSeek-backed Hindsight:
-
-```bash
-HINDSIGHT_API_LLM_PROVIDER=deepseek
-HINDSIGHT_API_LLM_MODEL=deepseek-chat
-HINDSIGHT_API_LLM_API_KEY=sk-your-deepseek-key
-```
-
-4. If Hermes itself needs provider keys, create `/opt/data` runtime secrets from the host-mounted directory:
-
-```bash
-cp hermes-data/.env.example appdata/hermes/.env
-```
-
-Then edit `appdata/hermes/.env`.
-
-For Hermes runtime providers, `appdata/hermes/.env.example` includes placeholders
-for `DEEPSEEK_API_KEY`, `LM_BASE_URL`, and `LM_API_KEY`.
-For web access in rootless mode, set:
-
-```bash
-OBSIDIAN_VAULT_PATH=/opt/data/obsidian-memory-vault
-FIRECRAWL_API_URL=http://firecrawl-api:3002
-CAMOFOX_URL=http://camofox:9377
-```
-
-5. Make sure the profile scaffold script is executable:
-
-```bash
-chmod +x scripts/create-profile.sh scripts/create-profile-rootless.sh
-```
-
-6. Create each Hermes profile you want. The first profile created becomes the
-active Hermes profile by writing `appdata/hermes/active_profile` and gateway state
-files so the first container start runs that profile. `default` is reserved by
-Hermes for the base home and should not be used as a profile name. The default
-bank name is `hermes-<profile>` and Headroom MCP is included automatically:
-
-```bash
-./scripts/create-profile.sh research
-./scripts/create-profile.sh coder hermes-coder
-```
-
-When Hindsight is already running, the script also creates each matching
-Hindsight bank. If Hindsight is not up yet, it prints the curl command to run
-after startup.
-
-Hindsight's `HINDSIGHT_API_LLM_*` values do not configure Hermes Agent's own
-chat model. To make Hermes use LM Studio, set the runtime model in both the
-base config (`appdata/hermes/config.yaml`) and each active profile config, for
-example `appdata/hermes/profiles/research/config.yaml`:
-
-```yaml
-model:
-  provider: lmstudio
-  default: your-local-model
-  base_url: http://host.docker.internal:1234/v1
-```
-
-For LM Studio on another LAN machine, use that machine's IP address instead of
-`host.docker.internal`.
-
-7. Validate the Compose file:
-
-```bash
-docker compose --env-file .env config
-```
-
-8. Start the stack:
-
-```bash
-docker compose --env-file .env up -d
-```
-
-9. Check the sidecars:
-
-```bash
-curl -fsS http://127.0.0.1:8888/health
-curl -fsS http://127.0.0.1:8787/readyz
-curl -fsS http://127.0.0.1:3002/v0/health/liveness
-curl -fsS "http://127.0.0.1:8889/search?q=test&format=json"
-curl -fsS http://127.0.0.1:9377/health
-```
-
-10. If the profile script ran before Hindsight was up, initialize each Hindsight
-bank after startup:
-
-```bash
-curl -fsS -X PUT "http://127.0.0.1:8888/v1/default/banks/hermes-research" \
-  -H "content-type: application/json" \
-  -d '{}'
-```
-
-Repeat that command for any bank the script reported as skipped, such as
-`hermes-coder`.
-
-The local dashboard service starts with the base stack and is published on host
-loopback at `http://127.0.0.1:${HERMES_DASHBOARD_HOST_PORT:-9119}`.
+Do not replace or delete copied `appdata/` content without a timestamped copy
+or verified Restic snapshot. See [OPERATIONS.md](OPERATIONS.md) for the apply
+command, permission normalization, cron review, integrated URL checks, and
+post-migration validation.
 
 ## Hindsight Bank Restore
 
 Use the guarded restore utilities when migrating a Hindsight document-transfer
-backup into a new, empty Hindsight instance. The validator checks the manifest,
-archive checksums, and preserved observations without contacting any API:
+backup into a new, empty Hindsight instance. Validate the manifest, checksums,
+and preserved observations before contacting the target API:
 
 ```bash
 python3 scripts/validate-hindsight-bank-backup.py \
   --backup-dir tmp/hindsight-bank-backups/<backup-name> \
   --report tmp/hindsight-bank-backups/<backup-name>/validation-report.json
-```
 
-Next, run a read-only target preflight. It refuses banks that already exist and
-confirms that the destination supports the document-transfer API:
-
-```bash
 python3 scripts/restore-hindsight-bank-backup.py \
   --backup-dir tmp/hindsight-bank-backups/<backup-name> \
-  --api-url http://127.0.0.1:8888 \
-  --report tmp/hindsight-bank-backups/<backup-name>/target-dry-run.json
+  --api-url http://127.0.0.1:8888
 ```
 
-After reviewing the dry-run report, restore one pilot bank, then the remaining
-banks. `--apply` creates a timestamped archive of `appdata/hindsight` under
-`tmp/hindsight-target-pre-restore-*` before any target write. The script never
-deletes or overwrites an existing bank, validates each imported document and
-memory count, and imports archived observations with the documents.
-
-```bash
-python3 scripts/restore-hindsight-bank-backup.py \
-  --backup-dir tmp/hindsight-bank-backups/<backup-name> \
-  --api-url http://127.0.0.1:8888 \
-  --bank hermes-maestro \
-  --apply
-```
-
-During import, the script temporarily disables automatic consolidation for each
-new bank and removes that temporary override after count verification. This
-keeps a restore from generating new derived observations or failed LLM jobs.
-After the restore, verify Hindsight's LLM URL is reachable from the host and
-container before manually requesting any consolidation or consolidation
-recovery.
+The restore command defaults to a read-only target preflight and refuses banks
+that already exist. The write-enabled `--apply` path creates a timestamped raw
+Hindsight archive first, preserves observations, and verifies imported counts.
+Restore one pilot bank before all banks, and verify LLM connectivity before
+requeueing consolidation. See [OPERATIONS.md](OPERATIONS.md) for the complete
+preflight, pilot, all-bank, and post-restore sequence.
 
 ## Restic Backups
 
-The rootless backup jobs use Restic with a repository configured outside this
-Git checkout. Use an SFTP or rest-server backend on the NAS; do not store a
-Restic repository on a locally mounted CIFS/SMB share.
-
-Create `/home/sysadmin/.config/hermes-backup/restic.env` with mode `0600`:
-
-```bash
-RESTIC_REPOSITORY=sftp:hermes-nas-restic:/absolute/path/to/Restic/bl-agentic-01
-RESTIC_PASSWORD_FILE=/home/sysadmin/.config/hermes-backup/restic-password
-```
-
-The password file must be mode `0600` and its value must also be retained in a
-password manager. The daily job at **07:45 JST** backs up Hermes profile data,
+The rootless backup jobs use Restic with repository credentials kept outside
+this Git checkout. Use an SFTP or rest-server backend on the NAS; do not place
+the repository on a locally mounted CIFS/SMB share. The daily job at **07:45 JST** backs up Hermes profile data,
 the Memory Vault, configuration, Headroom, Firecrawl Postgres, and a validated
 logical Hindsight export. It deliberately excludes Firecrawl Redis/RabbitMQ,
 runtime caches, logs, images, and generic `tmp` data.
@@ -373,174 +222,64 @@ The weekly raw Hindsight checkpoint runs Saturday at 08:00 JST. It briefly
 stops only `hindsight-mcp`, captures its raw `.pg0` state, and starts the
 service again before uploading to Restic.
 
-Install and inspect the persistent user timers:
+Install the persistent user timers after configuring
+`~/.config/hermes-backup/restic.env` and its password file:
 
 ```bash
-sudo loginctl enable-linger sysadmin
+sudo loginctl enable-linger "$USER"
 ./scripts/install-backup-timers.sh
-systemctl --user list-timers --all
 ```
 
-Run either workflow manually from the repository root:
+Manual runs use the same workflows as the timers:
 
 ```bash
 ./scripts/backup-hermes-data.sh --mode daily
 ./scripts/backup-hermes-data.sh --mode weekly-raw
 ```
 
-Inspect and verify the encrypted repository:
+Load that environment to inspect snapshots, restorable data size, physical
+repository size, and repository integrity:
 
 ```bash
 set -a
-source /home/sysadmin/.config/hermes-backup/restic.env
+source ~/.config/hermes-backup/restic.env
 set +a
 restic snapshots --tag hermes
+restic stats --mode restore-size <snapshot-id>
+restic stats --mode raw-data
 restic check
 ```
 
-Test recovery quarterly in an isolated Compose checkout and appdata directory.
-Restore a Restic snapshot, validate its logical Hindsight export with
-`scripts/validate-hindsight-bank-backup.py`, import it into an empty Hindsight
-instance using `scripts/restore-hindsight-bank-backup.py`, and compare bank,
-profile, vault, and cron counts before accepting the backup policy as healthy.
+See [OPERATIONS.md](OPERATIONS.md) for manual daily and weekly jobs, timer logs,
+snapshot browsing, isolated restores, and the tested recovery order. Recovery
+testing must restore into a separate directory or Compose checkout; never
+overwrite live `appdata/` as a test.
 
-## Rootless Docker Setup
+## Rootless Runtime Guarantees
 
-Use this path when the Ubuntu host runs the Docker daemon in rootless mode for
-the deployment user.
+The supported deployment path is rootless Docker for the deployment user.
+`DOCKER_SOCK` must point to `/run/user/<uid>/docker.sock`, and Compose commands
+must load `.env`. Bind-mounted runtime state can have user-namespace mapped
+numeric owners; that is expected and must not be "fixed" recursively from the
+host. Use `scripts/normalize-appdata-permissions.sh` when host group readability
+needs repair.
 
-1. Confirm your shell is talking to the rootless Docker daemon:
-
-```bash
-docker info
-docker compose version
-```
-
-If needed, set:
-
-```bash
-export DOCKER_HOST="unix:///run/user/$(id -u)/docker.sock"
-```
-
-2. Set the rootless socket path in `.env`:
-
-```bash
-sed -i "s|^DOCKER_SOCK=.*|DOCKER_SOCK=/run/user/$(id -u)/docker.sock|" .env
-test -S "/run/user/$(id -u)/docker.sock"
-```
-
-If that socket check fails, your shell is not using a rootless Docker daemon for
-this user; start rootless Docker or set `DOCKER_SOCK` to the real socket before
-starting the stack.
-
-3. Seed the writable base config and create profiles:
-
-```bash
-mkdir -p appdata/hermes/obsidian-memory-vault appdata/hindsight appdata/headroom appdata/firecrawl-redis appdata/firecrawl-rabbitmq appdata/firecrawl-postgres
-cp -n hermes-data/config.rootless.yaml appdata/hermes/config.yaml
-./scripts/create-profile.sh research
-```
-
-The scaffold writes `research` to `appdata/hermes/active_profile` and seeds gateway
-state when no active profile exists yet, so the first gateway start uses the
-named profile instead of the base `default` profile.
-
-If Hindsight is already running, the scaffold also creates the matching bank
-through the host-published API. Otherwise it prints the curl command to retry
-after the stack is healthy.
-
-Rootless profile configs use:
-
-```text
-http://hindsight-mcp:8888/mcp/hermes-research/
-docker exec -i hermes-headroom-mcp headroom mcp serve
-```
-
-For web access, set these in `appdata/hermes/.env`:
-
-```bash
-FIRECRAWL_API_URL=http://firecrawl-api:3002
-CAMOFOX_URL=http://camofox:9377
-```
-
-4. Validate and start the stack:
-
-```bash
-docker compose --env-file .env config
-
-docker compose --env-file .env up -d
-```
-
-Rootless containers write bind-mounted state with user-namespace mapped numeric
-owners such as `100998` and `100999`. After the first startup, normalize Hermes
-and Hindsight for host group readability:
-
-```bash
-./scripts/normalize-appdata-permissions.sh
-```
-
-5. Check the sidecars from the Ubuntu host:
-
-```bash
-curl -fsS http://127.0.0.1:8888/health
-curl -fsS http://127.0.0.1:8787/readyz
-curl -fsS http://127.0.0.1:3002/v0/health/liveness
-curl -fsS "http://127.0.0.1:8889/search?q=test&format=json"
-curl -fsS http://127.0.0.1:9377/health
-```
-
-6. If bank creation was skipped because Hindsight was not running yet, initialize
-the bank from the host:
-
-```bash
-curl -fsS -X PUT "http://127.0.0.1:8888/v1/default/banks/hermes-research" \
-  -H "content-type: application/json" \
-  -d '{}'
-```
-
-The dashboard is published on host loopback at
-`http://127.0.0.1:${HERMES_DASHBOARD_HOST_PORT:-9119}`.
+The rootless profile scaffold pins Hindsight to `hermes-<profile>`, uses
+Compose service names for Hindsight, Headroom, Firecrawl, Camofox, and SearXNG,
+and makes the first named profile active. [QUICKSTART.md](QUICKSTART.md) owns the
+setup commands; [OPERATIONS.md](OPERATIONS.md) owns status and repair commands.
 
 ## Remote UI Access
 
 By default, published ports bind to `127.0.0.1` so the services are local-only.
-To reach selected UIs from another machine on your LAN, set bind hosts in
-`.env`, then recreate the stack:
+Hermes Dashboard refuses a non-loopback bind until basic authentication is
+configured. Hindsight's control plane and Headroom's proxy/statistics endpoint
+also require a trusted network boundary; the Headroom port is an LLM proxy, not
+just a read-only dashboard. Prefer an SSH or Tailscale tunnel when practical.
 
-```bash
-HERMES_DASHBOARD_BIND_HOST=0.0.0.0
-HINDSIGHT_UI_BIND_HOST=0.0.0.0
-
-# More sensitive: exposes the Headroom proxy/stat endpoints.
-HEADROOM_PROXY_BIND_HOST=0.0.0.0
-```
-
-Then restart:
-
-```bash
-docker compose --env-file .env \
-  up -d --force-recreate
-```
-
-Use the server's LAN IP in a browser:
-
-```text
-Hermes Dashboard:        http://<server-ip>:9119/login?next=%2F
-Hindsight Control Plane: http://<server-ip>:9999
-Headroom stats:          http://<server-ip>:8787/stats
-Headroom history:        http://<server-ip>:8787/stats-history
-```
-
-Hermes Dashboard refuses non-loopback binds until dashboard auth is configured.
-Set `dashboard.basic_auth.username` and `dashboard.basic_auth.password_hash` in
-the base runtime config, `appdata/hermes/config.yaml`, then use the explicit
-`/login?next=%2F` URL for
-username/password auth. The dashboard root can first auto-redirect through the
-OAuth route, which may return an internal server error when only basic auth is
-configured. Alternatively, use an SSH/Tailscale tunnel and keep the bind host at
-`127.0.0.1`. Hindsight logs currently report no API key configured, and the
-Headroom port is an LLM proxy as well as a stats endpoint, so expose them only
-on a trusted network or behind a firewall.
+See [OPERATIONS.md](OPERATIONS.md) for password-hash generation, direct login
+verification, bind settings, and force recreation. Use the explicit
+`http://<server-ip>:9119/login?next=%2F` path for dashboard basic auth.
 
 The default rootless stack publishes Hermes' API-server port on
 `${HERMES_API_BIND_HOST:-127.0.0.1}:${HERMES_API_HOST_PORT:-8642}`, but Hermes
