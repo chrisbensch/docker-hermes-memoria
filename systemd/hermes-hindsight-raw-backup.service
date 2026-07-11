@@ -1,0 +1,12 @@
+[Unit]
+Description=Hermes raw Hindsight Restic checkpoint
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/sysadmin/docker-hermes-memoria
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=DOCKER_HOST=unix:///run/user/1000/docker.sock
+ExecStart=/home/sysadmin/docker-hermes-memoria/scripts/backup-hermes-data.sh --mode weekly-raw
+Nice=10

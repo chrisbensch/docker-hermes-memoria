@@ -19,3 +19,9 @@ grep -Fq -- '--exclude=./lazy-packages' "$script"
 ! grep -Fq 'firecrawl-rabbitmq' "$script"
 
 "$script" --help | grep -Fq 'daily|weekly-raw'
+
+grep -Fq 'OnCalendar=*-*-* 07:45:00 Asia/Tokyo' systemd/hermes-backup.timer
+grep -Fq 'OnCalendar=Sat *-*-* 08:00:00 Asia/Tokyo' systemd/hermes-hindsight-raw-backup.timer
+grep -Fq 'Persistent=true' systemd/hermes-backup.timer
+grep -Fq 'Persistent=true' systemd/hermes-hindsight-raw-backup.timer
+grep -Fq 'Linger=yes' scripts/install-backup-timers.sh

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Hermes logical backup after scheduled agent work
+
+[Timer]
+OnCalendar=*-*-* 07:45:00 Asia/Tokyo
+Persistent=true
+Unit=hermes-backup.service
+
+[Install]
+WantedBy=timers.target
