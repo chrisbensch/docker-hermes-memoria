@@ -34,15 +34,10 @@ mcp_servers:
   #   timeout: 120
 
   headroom:
-    command: "docker"
+    command: "sg"
     args:
-      - "exec"
-      - "-i"
-      - "-e"
-      - "HEADROOM_PROXY_URL=http://headroom-proxy:8787"
-      - "hermes-headroom-mcp"
-      - "headroom"
-      - "mcp"
-      - "serve"
+      - "hostdocker"
+      - "-c"
+      - "exec docker exec -i -e HEADROOM_PROXY_URL=http://headroom-proxy:8787 hermes-headroom-mcp headroom mcp serve"
     enabled: true
     timeout: 120
