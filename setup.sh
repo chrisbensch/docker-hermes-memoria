@@ -379,6 +379,8 @@ preflight_check() {
   check_required_file "$script_dir/web-search/searxng-limiter.toml" "SearXNG limiter config"
   check_required_file "$script_dir/scripts/create-profile.sh" "Profile creation script"
   check_required_file "$script_dir/scripts/normalize-appdata-permissions.sh" "Permission normalization script"
+  check_required_file "$script_dir/scripts/fix-obsidian-vault-permissions.sh" "Obsidian vault permission script"
+  check_required_command setfacl
 
   docker_sock=$(env_default "$env_file" DOCKER_SOCK "/run/user/$(id -u)/docker.sock")
   check_docker_context "$docker_sock"
@@ -467,6 +469,8 @@ setup_prerequisite_check() {
   check_required_file "$script_dir/web-search/searxng-settings.template.yml" "SearXNG settings template"
   check_required_file "$script_dir/web-search/nginx.conf" "SearXNG nginx config"
   check_required_file "$script_dir/web-search/searxng-limiter.toml" "SearXNG limiter config"
+  check_required_file "$script_dir/scripts/fix-obsidian-vault-permissions.sh" "Obsidian vault permission script"
+  check_required_command setfacl
 
   firecrawl_source_dir=$(resolve_stack_path "$(env_default "$env_file" FIRECRAWL_SOURCE_DIR ./.firecrawl-src)")
   if [ -f "$firecrawl_source_dir/apps/nuq-postgres/Dockerfile" ]; then
@@ -750,6 +754,7 @@ fi
 chmod +x \
   "$script_dir/scripts/create-profile.sh" \
   "$script_dir/scripts/create-profile-rootless.sh" \
+  "$script_dir/scripts/fix-obsidian-vault-permissions.sh" \
   "$script_dir/scripts/normalize-appdata-permissions.sh"
 HERMES_DATA_DIR="$data_dir" HERMES_APPDATA_DIR="$appdata_host_dir" HERMES_OBSIDIAN_VAULT_DIR="$obsidian_vault_dir" HERMES_PROFILE_ACTIVATE=1 "$profile_script" "$profile_name" "$bank_id"
 
@@ -805,6 +810,14 @@ if prompt_yes_no 'Configure Hermes Agent runtime model now' y; then
       ;;
   esac
 fi
+
+image_name=$(env_default "$env_file" HERMES_IMAGE nousresearch/hermes-agent:latest)
+HERMES_ENV_FILE="$env_file" \
+HERMES_DATA_DIR="$data_dir" \
+HERMES_OBSIDIAN_VAULT_DIR="$obsidian_vault_dir" \
+HERMES_IMAGE="$image_name" \
+HERMES_UID="$uid_value" \
+  "$script_dir/scripts/fix-obsidian-vault-permissions.sh"
 
 compose_cmd='docker compose --env-file .env'
 
