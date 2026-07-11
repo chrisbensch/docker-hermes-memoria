@@ -25,3 +25,7 @@ grep -Fq 'OnCalendar=Sat *-*-* 08:00:00 Asia/Tokyo' systemd/hermes-hindsight-raw
 grep -Fq 'Persistent=true' systemd/hermes-backup.timer
 grep -Fq 'Persistent=true' systemd/hermes-hindsight-raw-backup.timer
 grep -Fq 'Linger=yes' scripts/install-backup-timers.sh
+grep -Fq 'scripts/install-backup-timers.sh' README.md
+grep -Fq 'restic check' README.md
+grep -Fq '07:45 JST' README.md
+grep -Fq 'weekly raw Hindsight' README.md

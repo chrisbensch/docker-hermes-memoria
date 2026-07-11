@@ -126,7 +126,7 @@ stage_daily() {
     --exclude=./lazy-packages \
     -C /opt/data -czf - . > "$staging/hermes-data.tar.gz"
   compose exec -T headroom-proxy tar -C /home/nonroot -czf - .headroom > "$staging/headroom-data.tar.gz"
-  compose exec -T firecrawl-nuq-postgres sh -lc 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$staging/firecrawl-postgres.sql"
+  compose exec -T firecrawl-nuq-postgres sh -lc 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$staging/firecrawl-postgres.sql"
   python3 "$REPO_ROOT/scripts/backup-hindsight-banks.py" \
     --api-url http://127.0.0.1:8888 \
     --output-dir "$staging" \

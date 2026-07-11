@@ -350,6 +350,60 @@ After the restore, verify Hindsight's LLM URL is reachable from the host and
 container before manually requesting any consolidation or consolidation
 recovery.
 
+## Restic Backups
+
+The rootless backup jobs use Restic with a repository configured outside this
+Git checkout. Use an SFTP or rest-server backend on the NAS; do not store a
+Restic repository on a locally mounted CIFS/SMB share.
+
+Create `/home/sysadmin/.config/hermes-backup/restic.env` with mode `0600`:
+
+```bash
+RESTIC_REPOSITORY=sftp:hermes-nas-restic:/absolute/path/to/Restic/bl-agentic-01
+RESTIC_PASSWORD_FILE=/home/sysadmin/.config/hermes-backup/restic-password
+```
+
+The password file must be mode `0600` and its value must also be retained in a
+password manager. The daily job at **07:45 JST** backs up Hermes profile data,
+the Memory Vault, configuration, Headroom, Firecrawl Postgres, and a validated
+logical Hindsight export. It deliberately excludes Firecrawl Redis/RabbitMQ,
+runtime caches, logs, images, and generic `tmp` data.
+
+The weekly raw Hindsight checkpoint runs Saturday at 08:00 JST. It briefly
+stops only `hindsight-mcp`, captures its raw `.pg0` state, and starts the
+service again before uploading to Restic.
+
+Install and inspect the persistent user timers:
+
+```bash
+sudo loginctl enable-linger sysadmin
+./scripts/install-backup-timers.sh
+systemctl --user list-timers --all
+```
+
+Run either workflow manually from the repository root:
+
+```bash
+./scripts/backup-hermes-data.sh --mode daily
+./scripts/backup-hermes-data.sh --mode weekly-raw
+```
+
+Inspect and verify the encrypted repository:
+
+```bash
+set -a
+source /home/sysadmin/.config/hermes-backup/restic.env
+set +a
+restic snapshots --tag hermes
+restic check
+```
+
+Test recovery quarterly in an isolated Compose checkout and appdata directory.
+Restore a Restic snapshot, validate its logical Hindsight export with
+`scripts/validate-hindsight-bank-backup.py`, import it into an empty Hindsight
+instance using `scripts/restore-hindsight-bank-backup.py`, and compare bank,
+profile, vault, and cron counts before accepting the backup policy as healthy.
+
 ## Rootless Docker Setup
 
 Use this path when the Ubuntu host runs the Docker daemon in rootless mode for
