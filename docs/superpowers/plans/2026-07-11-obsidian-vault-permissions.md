@@ -14,6 +14,8 @@
 - Inside the container, vault ownership is `hermes:root`.
 - Directories are user/group writable, setgid, and inaccessible to others.
 - Files are user/group writable, preserve existing user/group execute bits, and are inaccessible to others.
+- Default POSIX ACLs must preserve owning-group write access for files created by Hermes with umask `0022`.
+- The host must provide `setfacl` from Ubuntu's `acl` package.
 - Resolve `APPDATA_DIR`; never assume `./appdata` when an override exists.
 - Refuse `/`, the repository root, the Hermes data root, and paths whose basename is not `obsidian-memory-vault`.
 - Do not move, delete, or rewrite vault contents.
@@ -42,6 +44,8 @@ grep -Fq 'obsidian-memory-vault' "$vault_script"
 grep -Fq 'chown -R "$hermes_uid":0' "$vault_script"
 grep -Fq 'chmod u+rwx,g+rwx,o-rwx,g+s' "$vault_script"
 grep -Fq 'chmod u+rw,g+rw,o-rwx' "$vault_script"
+grep -Fq 'setfacl' "$vault_script"
+grep -Fq 'sudo apt-get install acl' "$vault_script"
 grep -Fq 'Container Hermes write: ok' "$vault_script"
 grep -Fq 'Host deployment-user write: ok' "$vault_script"
 ```
@@ -74,7 +78,7 @@ Use the configured numeric `HERMES_UID`, not a host subordinate UID. Preserve fi
 
 - [ ] **Step 5: Add host and container-user verification**
 
-Use unique temporary filenames below the vault. Verify create/write/delete as the host user, then run a second one-off container with `--user "$HERMES_UID:$HERMES_UID"` to verify create/write/delete at `/mnt`. Install a trap that removes any remaining verification files.
+Use host `setfacl` to add recursive owning-group access and default directory ACLs before the container ownership change. Use unique temporary filenames below the vault and verify cross-writes: Hermes creates with umask `0022`, then the host appends and removes it; the host creates, then Hermes appends and removes it. Install a trap that removes any remaining verification files.
 
 - [ ] **Step 6: Run tests and commit**
 
@@ -226,6 +230,12 @@ Run:
 git push origin main
 ssh sysadmin@100.75.104.119 \
   'cd /home/sysadmin/docker-hermes-memoria && git pull --ff-only'
+```
+
+Confirm the host prerequisite is installed:
+
+```bash
+command -v setfacl || sudo apt-get install -y acl
 ```
 
 - [ ] **Step 2: Capture pre-change evidence**

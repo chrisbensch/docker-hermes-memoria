@@ -28,13 +28,16 @@ owner: hermes
 group: root
 directories: user and group rwx, setgid, no other access
 files: user and group rw, preserve existing user/group execute bits, no other access
+default ACL: owner and owning group rw on files and rwx on directories
 ```
 
 In rootless Docker, container user `hermes` maps to a subordinate host UID,
 while container group `root` maps to the deployment user's primary host group.
 This gives Hermes owner access and host `sysadmin` group access without exposing
 the vault to other users. Setgid directories make new content inherit the
-shared group.
+shared group. A default POSIX ACL is also required because the live Hermes
+gateway uses umask `0022`; setgid alone would make newly created files
+group-owned correctly but not group-writable.
 
 ## Components
 
@@ -48,14 +51,19 @@ will:
   setup, migration, tests, and non-default deployments;
 - refuse empty, `/`, checkout-root, or non-vault target paths;
 - require the vault directory to exist;
+- require host `setfacl` from Ubuntu's `acl` package and print the exact install
+  command when it is missing;
+- apply recursive access ACLs and default directory ACLs for the owning group
+  before changing the container owner;
 - use a one-off rootless Hermes image as container root, avoiding host sudo and
   hard-coded subordinate IDs;
 - resolve the `hermes` account inside the image and apply `hermes:root`
   ownership recursively;
 - add user/group write permissions, remove other access, set setgid on
   directories, and preserve existing executable bits on files;
-- verify a write/delete operation as the container Hermes UID and a separate
-  write/delete operation as the host deployment user;
+- verify cross-writes in both directions: Hermes creates with umask `0022` and
+  the host appends/removes it, then the host creates and Hermes appends/removes
+  it;
 - print mapped numeric ownership and a concise success result without listing
   vault contents or secrets.
 
@@ -83,18 +91,20 @@ The specialized helper owns the vault's write-sharing policy and must run last.
 
 Before changing ownership on `bl-agentic-01`:
 
-1. Run a daily logical Restic backup and verify the snapshot completes.
-2. Record the vault file count and current numeric ownership summary.
-3. Run the new helper from the deployed checkout.
-4. Verify create/write/delete as container Hermes and host `sysadmin`.
-5. Confirm the file count is unchanged and the Compose stack remains healthy.
+1. Install Ubuntu's `acl` package if `setfacl` is unavailable.
+2. Run a daily logical Restic backup and verify the snapshot completes.
+3. Record the vault file count and current numeric ownership summary.
+4. Run the new helper from the deployed checkout.
+5. Verify cross-write and delete access as container Hermes and host `sysadmin`.
+6. Confirm the file count is unchanged and the Compose stack remains healthy.
 
 The change modifies metadata only. No vault content will be moved or deleted.
 
 ## Error Handling
 
 - Unsafe or missing target paths fail before container execution.
-- Missing `.env`, Docker, image identity, or rootless socket fails clearly.
+- Missing `.env`, Docker, `setfacl`, image identity, or rootless socket fails
+  clearly.
 - Any `chown`, `chmod`, or write verification failure aborts with a nonzero
   status.
 - Temporary verification files use unique names and are removed by traps.
