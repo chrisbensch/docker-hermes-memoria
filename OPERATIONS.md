@@ -94,9 +94,10 @@ procedure below for the canonical profile-aware test.
 
 Headroom MCP is not an HTTP service. Hermes starts `headroom mcp serve` over
 stdio with `docker exec -i` in the intentionally sleeping
-`hermes-headroom-mcp` container. The Hermes service already mounts the rootless
-socket selected by `DOCKER_SOCK`; adding `/var/run/docker.sock` again can target
-the wrong daemon and grants no missing capability.
+`hermes-headroom-mcp` container. The Hermes gateway and dashboard services both
+mount the rootless socket selected by `DOCKER_SOCK` so gateway, cron, and
+dashboard chat sessions can launch the same stdio transport. Adding another
+socket path can target the wrong daemon and grants no missing capability.
 
 The image creates `hostdocker` dynamically from the mounted socket GID. Profile
 configuration invokes `sg hostdocker -c` so MCP subprocesses reacquire that
@@ -106,10 +107,15 @@ configuration. The `headroom-proxy` service at port 8787 supports proxy and
 statistics APIs, but it is not an HTTP MCP endpoint.
 
 Use Hermes' profile-aware client test as the canonical check, replacing
-`<profile>` with the actual profile name:
+`<profile>` with the actual profile name. Run it against `hermes` for gateway
+sessions or `hermes-dashboard` for dashboard chat sessions:
 
 ```bash
 docker compose --env-file .env exec -T hermes \
+  /package/admin/s6/command/s6-setuidgid hermes \
+  hermes -p <profile> mcp test headroom
+
+docker compose --env-file .env exec -T hermes-dashboard \
   /package/admin/s6/command/s6-setuidgid hermes \
   hermes -p <profile> mcp test headroom
 ```
