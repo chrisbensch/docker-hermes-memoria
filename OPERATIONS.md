@@ -175,35 +175,24 @@ The dashboard is local-only by default. Before setting
 `HERMES_DASHBOARD_BIND_HOST=0.0.0.0`, configure basic authentication in
 `appdata/hermes/config.yaml`.
 
-Generate a password hash with the exact Hermes image used by the stack. The
-password is read without echo and passed through the container environment so
-it is not embedded in shell history:
+Set the dashboard password with the exact Hermes image used by the stack. The
+password is read without echo, passed through the container environment so it
+is not embedded in shell history, and stored only as a generated hash in the
+base runtime configuration:
 
 ```bash
-read -rsp 'New dashboard password: ' DASH_PASSWORD
-printf '\n'
-export DASH_PASSWORD
-dashboard_hash=$(docker compose --env-file .env exec -T -e DASH_PASSWORD \
-  hermes-dashboard python -c \
-  'import os; from plugins.dashboard_auth.basic import hash_password; print(hash_password(os.environ["DASH_PASSWORD"]))')
-unset DASH_PASSWORD
-printf 'password_hash: "%s"\n' "$dashboard_hash"
+scripts/set-dashboard-password.sh
 ```
 
-Store only the generated hash in the base runtime configuration:
+The helper creates a timestamped backup next to `/opt/data/config.yaml`, writes
+the following base runtime configuration keys, and recreates the dashboard so
+it reloads the configuration:
 
 ```yaml
 dashboard:
   basic_auth:
     username: admin
     password_hash: "<generated-password-hash>"
-```
-
-Recreate the dashboard so it reloads the configuration:
-
-```bash
-docker compose --env-file .env up -d --force-recreate hermes-dashboard
-docker compose --env-file .env logs --tail=100 hermes-dashboard
 ```
 
 Before testing HTTP login, verify that the password matches the hash visible
