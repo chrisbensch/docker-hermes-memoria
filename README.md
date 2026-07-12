@@ -61,11 +61,13 @@ The Headroom MCP container follows the repo's Docker image and stdio MCP pattern
 - MCP transport: stdio via `sg hostdocker -c` and `headroom mcp serve`
 - Shared data directory: `appdata/headroom`
 
-The MCP container sleeping while idle is expected. The Hermes container already
-mounts the configured rootless Docker socket; `sg hostdocker` reacquires the
-dynamically created socket group for agent and cron execution paths that drop
-supplementary groups. Do not hard-code a mapped GID or mount a second host
-socket. The healthy `headroom-proxy` HTTP service is not an MCP endpoint.
+The MCP container sleeping while idle is expected. The Hermes gateway and
+dashboard containers mount the same configured rootless Docker socket so both
+gateway and dashboard chat sessions can launch the stdio MCP transport.
+`sg hostdocker` reacquires the dynamically created socket group for execution
+paths that drop supplementary groups. Do not hard-code a mapped GID or mount a
+different host socket. The healthy `headroom-proxy` HTTP service is not an MCP
+endpoint.
 
 The Headroom proxy starts with the base Compose stack. Headroom's `/stats`,
 `/stats-history`, and `/readyz` HTTP endpoints are available on
