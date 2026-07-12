@@ -210,19 +210,7 @@ Before testing HTTP login, verify that the password matches the hash visible
 inside the recreated dashboard container:
 
 ```bash
-read -rsp 'Dashboard password to verify: ' DASH_PASSWORD
-printf '\n'
-export DASH_PASSWORD
-docker compose --env-file .env exec -T -e DASH_PASSWORD hermes-dashboard \
-  python - <<'PY'
-import os
-from hermes_cli.config import cfg_get, load_config
-from plugins.dashboard_auth.basic import _verify_password
-
-encoded = cfg_get(load_config(), "dashboard", "basic_auth", "password_hash")
-print("MATCH" if _verify_password(os.environ["DASH_PASSWORD"], encoded) else "NO MATCH")
-PY
-unset DASH_PASSWORD
+scripts/verify-dashboard-password.sh
 ```
 
 The expected output is `MATCH`. Then test the dashboard's JSON password-login
