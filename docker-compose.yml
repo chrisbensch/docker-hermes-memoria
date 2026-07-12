@@ -40,9 +40,17 @@ services:
     image: ${HERMES_IMAGE:-nousresearch/hermes-agent:latest}
     restart: unless-stopped
     depends_on:
-      - hermes
+      hermes:
+        condition: service_started
+      headroom-mcp:
+        condition: service_started
     volumes:
       - ${APPDATA_DIR:-./appdata}/hermes:/opt/data
+      - type: bind
+        source: ${DOCKER_SOCK:-/run/user/1000/docker.sock}
+        target: /var/run/docker.sock
+        bind:
+          create_host_path: false
     ports:
       - "${HERMES_DASHBOARD_BIND_HOST:-127.0.0.1}:${HERMES_DASHBOARD_HOST_PORT:-9119}:9119"
     environment:
