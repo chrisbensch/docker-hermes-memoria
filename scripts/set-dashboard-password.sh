@@ -4,7 +4,7 @@ set -Eeuo pipefail
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 repo_dir=$(CDPATH= cd -- "$script_dir/.." && pwd -P)
 env_file=${HERMES_ENV_FILE:-$repo_dir/.env}
-service=${HERMES_DASHBOARD_SERVICE:-hermes-dashboard}
+service=${HERMES_DASHBOARD_SERVICE:-hermes}
 username=${HERMES_DASHBOARD_USERNAME:-admin}
 recreate=1
 dry_run=0
@@ -18,14 +18,15 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/set-dashboard-password.sh [--username USER] [--no-recreate] [--dry-run]
 
-Generates a Hermes dashboard password hash inside the dashboard container,
+Generates a Hermes dashboard password hash inside the Hermes container,
 backs up the base runtime config, writes dashboard.basic_auth settings, and
-recreates the dashboard service unless --no-recreate is passed.
+recreates the Hermes service unless --no-recreate is passed. Recreation briefly
+restarts both the gateway and Dashboard because they share one container.
 
 Environment:
   DASH_PASSWORD              New password. If unset, prompt securely.
   HERMES_ENV_FILE            Compose env file. Defaults to ./.env.
-  HERMES_DASHBOARD_SERVICE   Compose service. Defaults to hermes-dashboard.
+  HERMES_DASHBOARD_SERVICE   Compose service hosting Dashboard. Defaults to hermes.
   HERMES_DASHBOARD_USERNAME  Dashboard username. Defaults to admin.
 USAGE
 }

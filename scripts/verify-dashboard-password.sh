@@ -4,7 +4,7 @@ set -Eeuo pipefail
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 repo_dir=$(CDPATH= cd -- "$script_dir/.." && pwd -P)
 env_file=${HERMES_ENV_FILE:-$repo_dir/.env}
-service=${HERMES_DASHBOARD_SERVICE:-hermes-dashboard}
+service=${HERMES_DASHBOARD_SERVICE:-hermes}
 
 fail() {
   printf 'Error: %s\n' "$*" >&2
@@ -20,7 +20,7 @@ Verifies a dashboard password against the hash in Hermes' base runtime config.
 Environment:
   DASH_PASSWORD              Password to verify. If unset, prompt securely.
   HERMES_ENV_FILE            Compose env file. Defaults to ./.env.
-  HERMES_DASHBOARD_SERVICE   Compose service. Defaults to hermes-dashboard.
+  HERMES_DASHBOARD_SERVICE   Compose service hosting Dashboard. Defaults to hermes.
 USAGE
 }
 

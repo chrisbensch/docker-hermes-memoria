@@ -22,44 +22,20 @@ services:
       # Only useful when you enable Hermes' API server with API_SERVER_KEY or
       # API_SERVER_ENABLED. The API server defaults to container port 8642.
       - "${HERMES_API_BIND_HOST:-127.0.0.1}:${HERMES_API_HOST_PORT:-8642}:8642"
-    environment:
-      HERMES_UID: ${HERMES_UID:-10000}
-      HERMES_GID: ${HERMES_GID:-10000}
-      HERMES_HOME_MODE: ${HERMES_HOME_MODE:-0755}
-      API_SERVER_HOST: ${API_SERVER_HOST:-0.0.0.0}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    command: ["gateway", "run"]
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "5"
-
-  hermes-dashboard:
-    image: ${HERMES_IMAGE:-nousresearch/hermes-agent:latest}
-    restart: unless-stopped
-    depends_on:
-      hermes:
-        condition: service_started
-      headroom-mcp:
-        condition: service_started
-    volumes:
-      - ${APPDATA_DIR:-./appdata}/hermes:/opt/data
-      - type: bind
-        source: ${DOCKER_SOCK:-/run/user/1000/docker.sock}
-        target: /var/run/docker.sock
-        bind:
-          create_host_path: false
-    ports:
       - "${HERMES_DASHBOARD_BIND_HOST:-127.0.0.1}:${HERMES_DASHBOARD_HOST_PORT:-9119}:9119"
     environment:
       HERMES_UID: ${HERMES_UID:-10000}
       HERMES_GID: ${HERMES_GID:-10000}
       HERMES_HOME_MODE: ${HERMES_HOME_MODE:-0755}
+      API_SERVER_HOST: ${API_SERVER_HOST:-0.0.0.0}
+      # The image's s6 supervisor runs Dashboard beside the gateway so both
+      # processes share one container-level Hermes runtime.
+      HERMES_DASHBOARD: "true"
+      HERMES_DASHBOARD_HOST: 0.0.0.0
+      HERMES_DASHBOARD_PORT: 9119
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    command: ["dashboard", "--host", "0.0.0.0", "--port", "9119", "--no-open"]
+    command: ["gateway", "run"]
     logging:
       driver: json-file
       options:

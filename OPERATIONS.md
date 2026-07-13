@@ -64,7 +64,7 @@ Inspect all logs or focus on one service:
 ```bash
 docker compose --env-file .env logs --tail=200
 docker compose --env-file .env logs --tail=200 hindsight-mcp
-docker compose --env-file .env logs --tail=200 hermes hermes-dashboard
+docker compose --env-file .env logs --tail=200 hermes
 docker compose --env-file .env logs -f firecrawl-api
 ```
 
@@ -94,9 +94,10 @@ procedure below for the canonical profile-aware test.
 
 Headroom MCP is not an HTTP service. Hermes starts `headroom mcp serve` over
 stdio with `docker exec -i` in the intentionally sleeping
-`hermes-headroom-mcp` container. The Hermes gateway and dashboard services both
-mount the rootless socket selected by `DOCKER_SOCK` so gateway, cron, and
-dashboard chat sessions can launch the same stdio transport. Adding another
+`hermes-headroom-mcp` container. The Hermes container runs both the gateway and
+Dashboard under the image's supervisor and mounts the rootless socket selected
+by `DOCKER_SOCK`, so gateway, cron, and dashboard chat sessions can launch the
+same stdio transport. Adding another
 socket path can target the wrong daemon and grants no missing capability.
 
 The image creates `hostdocker` dynamically from the mounted socket GID. Profile
@@ -107,15 +108,11 @@ configuration. The `headroom-proxy` service at port 8787 supports proxy and
 statistics APIs, but it is not an HTTP MCP endpoint.
 
 Use Hermes' profile-aware client test as the canonical check, replacing
-`<profile>` with the actual profile name. Run it against `hermes` for gateway
-sessions or `hermes-dashboard` for dashboard chat sessions:
+`<profile>` with the actual profile name. The single `hermes` container is the
+runtime for both gateway and dashboard chat sessions:
 
 ```bash
 docker compose --env-file .env exec -T hermes \
-  /package/admin/s6/command/s6-setuidgid hermes \
-  hermes -p <profile> mcp test headroom
-
-docker compose --env-file .env exec -T hermes-dashboard \
   /package/admin/s6/command/s6-setuidgid hermes \
   hermes -p <profile> mcp test headroom
 ```
@@ -185,8 +182,9 @@ scripts/set-dashboard-password.sh
 ```
 
 The helper creates a timestamped backup next to `/opt/data/config.yaml`, writes
-the following base runtime configuration keys, and recreates the dashboard so
-it reloads the configuration:
+the following base runtime configuration keys, and recreates the Hermes service
+so it reloads the configuration. This briefly restarts both gateway and
+Dashboard:
 
 ```yaml
 dashboard:
@@ -196,7 +194,7 @@ dashboard:
 ```
 
 Before testing HTTP login, verify that the password matches the hash visible
-inside the recreated dashboard container:
+inside the recreated Hermes container:
 
 ```bash
 scripts/verify-dashboard-password.sh
@@ -256,8 +254,8 @@ trap - EXIT
 Use `http://<server-ip>:9119/login?next=%2F` from a remote browser. The explicit
 login URL avoids the OAuth-first redirect used by the dashboard root. If valid
 credentials still return `401`, confirm the hash is in the base
-`appdata/hermes/config.yaml`, not only a profile config, and confirm the
-dashboard container was recreated after the edit.
+`appdata/hermes/config.yaml`, not only a profile config, and confirm the Hermes
+container was recreated after the edit.
 
 ### Trusted Remote UI Access
 
@@ -277,7 +275,7 @@ Recreate the affected services and use the server address rather than
 
 ```bash
 docker compose --env-file .env up -d --force-recreate \
-  hermes-dashboard hindsight-mcp headroom-proxy
+  hermes hindsight-mcp headroom-proxy
 ```
 
 ```text
