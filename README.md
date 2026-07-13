@@ -23,8 +23,7 @@ backup, restore, and recovery procedures.
 
 | Service | Purpose |
 | --- | --- |
-| `hermes` | Hermes gateway for the active profile. |
-| `hermes-dashboard` | Hermes Dashboard, sharing the same runtime data. |
+| `hermes` | Hermes gateway and supervised Dashboard in one container. |
 | `hindsight-mcp` | Hindsight API, HTTP MCP endpoints, and control plane. |
 | `headroom-proxy` | Headroom LLM proxy and statistics API. |
 | `headroom-mcp` | Intentionally sleeping container that runs Headroom MCP on demand over stdio. |
@@ -122,7 +121,7 @@ sg hostdocker -c 'exec docker exec -i -e HEADROOM_PROXY_URL=http://headroom-prox
 ```
 
 The rootless Docker socket configured by `DOCKER_SOCK` is mounted into the
-Hermes gateway and dashboard. `sg hostdocker -c` is required because some
+Hermes container. `sg hostdocker -c` is required because some
 Hermes execution paths drop supplementary groups before starting MCP
 subprocesses. Do not add another socket mount, hard-code a socket GID, or point
 the MCP configuration at `headroom-proxy`.
