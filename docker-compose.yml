@@ -13,6 +13,14 @@ services:
         condition: service_started
     volumes:
       - ${APPDATA_DIR:-./appdata}/hermes:/opt/data
+      # Hermes discovers the top-level AGENTS.md from its working directory.
+      # Keep the persistent source in appdata rather than the image layer.
+      - type: bind
+        source: ${APPDATA_DIR:-./appdata}/hermes/AGENTS.md
+        target: /opt/hermes/AGENTS.md
+        read_only: true
+        bind:
+          create_host_path: false
       - type: bind
         source: ${DOCKER_SOCK:-/run/user/1000/docker.sock}
         target: /var/run/docker.sock
