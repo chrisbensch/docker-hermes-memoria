@@ -1,5 +1,9 @@
 .env
 .env.bak-*
+.env.before-*.bak
+__pycache__/
+*.py[cod]
+/tmp/
 docker-agent-web/
 .firecrawl-src/
 appdata/
