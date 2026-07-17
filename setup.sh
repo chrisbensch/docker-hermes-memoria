@@ -374,6 +374,7 @@ preflight_check() {
   check_required_file "$script_dir/docker-compose.yml" "Compose file"
   check_required_file "$hermes_env_example" "Hermes env template"
   check_required_file "$seed_dir/config.rootless.yaml" "Rootless config seed"
+  check_required_file "$seed_dir/AGENTS.md" "Hermes AGENTS context seed"
   check_required_file "$script_dir/web-search/searxng-settings.template.yml" "SearXNG settings template"
   check_required_file "$script_dir/web-search/nginx.conf" "SearXNG nginx config"
   check_required_file "$script_dir/web-search/searxng-limiter.toml" "SearXNG limiter config"
@@ -400,6 +401,12 @@ preflight_check() {
     status_ok "Hermes appdata exists: $appdata_host_dir/hermes"
   else
     status_need "Hermes appdata will be created: $appdata_host_dir/hermes"
+  fi
+
+  if [ -f "$appdata_host_dir/hermes/AGENTS.md" ]; then
+    status_ok "Hermes AGENTS context exists: $appdata_host_dir/hermes/AGENTS.md"
+  else
+    status_need "Hermes AGENTS context will be seeded: $appdata_host_dir/hermes/AGENTS.md"
   fi
 
   if [ -d "$appdata_host_dir/hindsight" ]; then
@@ -466,6 +473,7 @@ setup_prerequisite_check() {
   check_required_file "$script_dir/docker-compose.yml" "Compose file"
   check_required_file "$hermes_env_example" "Hermes env template"
   check_required_file "$seed_dir/config.rootless.yaml" "Rootless config seed"
+  check_required_file "$seed_dir/AGENTS.md" "Hermes AGENTS context seed"
   check_required_file "$script_dir/web-search/searxng-settings.template.yml" "SearXNG settings template"
   check_required_file "$script_dir/web-search/nginx.conf" "SearXNG nginx config"
   check_required_file "$script_dir/web-search/searxng-limiter.toml" "SearXNG limiter config"
@@ -652,6 +660,9 @@ if [ ! -f "$base_config" ]; then
   cp "$seed_config" "$base_config"
 else
   backup_file "$base_config"
+fi
+if [ ! -f "$data_dir/AGENTS.md" ]; then
+  cp "$seed_dir/AGENTS.md" "$data_dir/AGENTS.md"
 fi
 
 firecrawl_source_dir=$(env_default "$env_file" FIRECRAWL_SOURCE_DIR ./.firecrawl-src)

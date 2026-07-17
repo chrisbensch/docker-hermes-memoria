@@ -52,6 +52,7 @@ test -S "/run/user/$(id -u)/docker.sock"
 mkdir -p appdata/hermes/obsidian-memory-vault appdata/hindsight appdata/headroom appdata/firecrawl-redis appdata/firecrawl-rabbitmq appdata/firecrawl-postgres
 cp hermes-data/.env.example appdata/hermes/.env
 cp -n hermes-data/config.rootless.yaml appdata/hermes/config.yaml
+cp -n hermes-data/AGENTS.md appdata/hermes/AGENTS.md
 cp web-search/searxng-settings.template.yml web-search/searxng-settings.yml
 secret=$(openssl rand -hex 32)
 sed -i "s/CHANGE-ME-TO-A-RANDOM-SECRET/$secret/" web-search/searxng-settings.yml
