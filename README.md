@@ -75,13 +75,19 @@ a read-only readiness check.
 Create a named profile with:
 
 ```bash
-./scripts/create-profile.sh research
+./scripts/create-profile.sh <profile-name>
 ```
 
 Profile names use lowercase letters, numbers, underscores, and hyphens.
 `default` is reserved. Each profile gets its own Hermes state and a dedicated
-Hindsight bank named `hermes-<profile>`. For `research`, the resulting memory
-wiring is:
+Hindsight bank named `hermes-<profile>`.
+
+The repository includes `research` as an optional reference profile. It
+demonstrates a role-specific `SOUL.md`, profile overrides, and the memory
+wiring; it is not required by the stack or by other profiles. Create it with
+`./scripts/create-profile.sh research`, or choose a name that fits your own
+deployment. For the optional `research` example, the resulting memory wiring
+is:
 
 ```text
 Hermes state:    /opt/data/profiles/research/
