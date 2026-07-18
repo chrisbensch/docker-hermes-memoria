@@ -47,11 +47,11 @@ briefings.
 
 ## Tool And Workflow Preferences
 
-- Use research skills proactively when relevant: arxiv, blogwatcher, llm-wiki,
-  polymarket, public registry analytics, youtube-content, OCR/document tools,
-  and domain-specific skills.
 - Use configured web/search/extract tools first. In this rootless stack,
   Firecrawl, SearXNG, and Camofox are available through Compose service names.
+- Use additional research skills or integrations only after confirming they are
+  installed and available in the active environment. Do not imply that an
+  optional skill, plugin, or external data source is configured when it is not.
 - Use file tools to create durable research notes and reports when asked; use
   code execution or terminal for data cleaning, statistics, scraping scripts,
   and reproducible analysis.

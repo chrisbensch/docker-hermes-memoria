@@ -1,7 +1,8 @@
 # Quickstart
 
-This is the short path for getting the Compose stack running. Use `research`
-as the example profile name, or replace it with your own.
+This is the short path for getting the Compose stack running. The bundled
+`research` profile is an optional reference example; replace it with your own
+profile name if it does not fit your deployment.
 
 For a guided setup that prompts for profile, model provider, UI
 exposure, prepares Firecrawl/SearXNG/Camofox, configures Hermes web backends,
@@ -71,7 +72,8 @@ If the socket check fails, start rootless Docker for this user or set
 2. Create the profile. The first profile created becomes the active
 Hermes profile by writing `appdata/hermes/active_profile` and seeding gateway state
 so the first container start runs that profile; do not create a profile named
-`default`.
+`default`. This command uses the optional bundled `research` example; replace
+it with your own profile name as needed.
 
 ```bash
 chmod +x scripts/create-profile.sh scripts/create-profile-rootless.sh
