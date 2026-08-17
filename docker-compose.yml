@@ -128,6 +128,108 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  # This is deliberately an opt-in, one-shot CLI service. It has no host port,
+  # is not configured as a Hermes MCP server, and sees only a staging corpus.
+  # Use scripts/run-gbrain-pilot.sh instead of starting it with `up`.
+  gbrain-pilot:
+    profiles: ["gbrain-pilot"]
+    build:
+      context: ./gbrain
+      args:
+        GBRAIN_REF: ${GBRAIN_REF:-c6dc0adf26a2d20df1147d2ec87c8922ca86d410}
+    # Container root maps to the rootless Docker deployment user on the host.
+    # Do not force HERMES_UID here: it maps to a subordinate UID and cannot
+    # write the host-owned, derived GBrain state directory.
+    user: "0:0"
+    environment:
+      GBRAIN_HOME: /var/lib/gbrain/home
+      GBRAIN_NO_ONBOARD_NUDGE: "1"
+      # Avoid GBrain's detached update-check hook; the source revision is
+      # reviewed and updated explicitly through GBRAIN_REF instead.
+      GBRAIN_SKIP_STARTUP_HOOKS: "1"
+    volumes:
+      # GBrain state is a derived index. The canonical Markdown never resides
+      # here, and no provider credentials are passed into this container.
+      - ${APPDATA_DIR:-./appdata}/gbrain:/var/lib/gbrain
+      # The runner imports this generated staging corpus only; the live vault
+      # is intentionally not mounted into GBrain.
+      - ${APPDATA_DIR:-./appdata}/gbrain/staging:/staging:ro
+    init: true
+    restart: "no"
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # Phase 1 only: private HTTP/OAuth surface validation over a disposable,
+  # synthetic PGLite brain. It is not a Hermes MCP server and never mounts the
+  # live vault. The published port is restricted to the Docker host loopback.
+  gbrain-http-test:
+    profiles: ["gbrain-http-test"]
+    build:
+      context: ./gbrain
+      args:
+        GBRAIN_REF: ${GBRAIN_REF:-c6dc0adf26a2d20df1147d2ec87c8922ca86d410}
+    # Same rootless bind-mount rule as the one-shot pilot service above.
+    user: "0:0"
+    environment:
+      GBRAIN_HOME: /var/lib/gbrain/home/http-test
+      GBRAIN_NO_ONBOARD_NUDGE: "1"
+      GBRAIN_SKIP_STARTUP_HOOKS: "1"
+    command: ["serve", "--http", "--port", "3131", "--bind", "0.0.0.0"]
+    ports:
+      - "127.0.0.1:${GBRAIN_HTTP_TEST_HOST_PORT:-3131}:3131"
+    volumes:
+      - ${APPDATA_DIR:-./appdata}/gbrain:/var/lib/gbrain
+    init: true
+    restart: "no"
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  # Phase 3 only: a deliberately narrow MCP facade over the synthetic GBrain
+  # HTTP test. It owns the OAuth read token and exposes only the reviewed
+  # allowlist, so callers cannot discover or invoke GBrain mutation tools.
+  # It is not yet configured in any Hermes profile.
+  gbrain-mcp-allowlist-test:
+    profiles: ["gbrain-proxy-test"]
+    build:
+      context: ./gbrain-allowlist-proxy
+    # In rootless Docker, container root maps to the unprivileged deployment
+    # user and can read the owner-only confidential-client bind mount.
+    user: "0:0"
+    depends_on:
+      gbrain-http-test:
+        condition: service_started
+    environment:
+      PORT: "3132"
+      GBRAIN_UPSTREAM_MCP_URL: http://gbrain-http-test:3131/mcp
+      GBRAIN_UPSTREAM_TOKEN_URL: http://gbrain-http-test:3131/token
+      GBRAIN_OAUTH_CREDENTIALS_FILE: /run/gbrain-oauth/client.env
+      # Begin with one reviewed retrieval operation. Add any other read tool
+      # only after an explicit policy and verification update.
+      GBRAIN_ALLOWED_TOOLS: search
+    volumes:
+      - type: bind
+        source: ${APPDATA_DIR:-./appdata}/gbrain/secrets/http-test-read-verifier-phase2.env
+        target: /run/gbrain-oauth/client.env
+        read_only: true
+        bind:
+          create_host_path: false
+    ports:
+      - "127.0.0.1:${GBRAIN_ALLOWLIST_TEST_HOST_PORT:-3132}:3132"
+    init: true
+    restart: "no"
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
   firecrawl-api:
     image: ${FIRECRAWL_IMAGE:-ghcr.io/firecrawl/firecrawl:latest}
     restart: unless-stopped
