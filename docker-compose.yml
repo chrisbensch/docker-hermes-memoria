@@ -85,7 +85,7 @@ services:
         max-file: "5"
 
   headroom-proxy:
-    image: ${HEADROOM_IMAGE:-ghcr.io/chopratejas/headroom:0.27.0}
+    image: ${HEADROOM_IMAGE:-ghcr.io/headroomlabs-ai/headroom:0.34.0}
     restart: unless-stopped
     ports:
       - "${HEADROOM_PROXY_BIND_HOST:-127.0.0.1}:${HEADROOM_PROXY_HOST_PORT:-8787}:8787"
@@ -111,7 +111,7 @@ services:
         max-file: "5"
 
   headroom-mcp:
-    image: ${HEADROOM_IMAGE:-ghcr.io/chopratejas/headroom:0.27.0}
+    image: ${HEADROOM_IMAGE:-ghcr.io/headroomlabs-ai/headroom:0.34.0}
     container_name: hermes-headroom-mcp
     restart: unless-stopped
     entrypoint: ["sleep"]
