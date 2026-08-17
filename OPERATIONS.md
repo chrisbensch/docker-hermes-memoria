@@ -182,9 +182,9 @@ scripts/set-dashboard-password.sh
 ```
 
 The helper creates a timestamped backup next to `/opt/data/config.yaml`, writes
-the following base runtime configuration keys, and recreates the Hermes service
-so it reloads the configuration. This briefly restarts both gateway and
-Dashboard:
+the following base runtime configuration keys, enables the bundled `basic`
+dashboard-auth plugin, and recreates the Hermes service so it reloads the
+configuration. This briefly restarts both gateway and Dashboard:
 
 ```yaml
 dashboard:

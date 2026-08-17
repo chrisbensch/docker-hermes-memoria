@@ -108,6 +108,8 @@ docker compose --env-file "$env_file" exec -T "$service" \
   /opt/hermes/.venv/bin/hermes -p default config set dashboard.basic_auth.username "$username"
 docker compose --env-file "$env_file" exec -T "$service" \
   /opt/hermes/.venv/bin/hermes -p default config set dashboard.basic_auth.password_hash "$dashboard_hash"
+docker compose --env-file "$env_file" exec -T "$service" \
+  /opt/hermes/.venv/bin/hermes plugins enable basic
 
 printf 'Updated dashboard credentials in /opt/data/config.yaml\n'
 printf 'Backup: %s\n' "$backup_path"

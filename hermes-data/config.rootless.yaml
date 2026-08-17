@@ -15,3 +15,10 @@
 # profile for model settings, so setup.sh mirrors the selected runtime model
 # here while each named profile owns its Hindsight/Headroom config.
 mcp_servers: {}
+
+# Hermes requires an enabled authentication provider before Dashboard/Desktop
+# can bind to a non-loopback address. The provider stays inactive until basic
+# auth credentials are configured by setup.sh or set-dashboard-password.sh.
+plugins:
+  enabled:
+    - basic
