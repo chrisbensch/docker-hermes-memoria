@@ -111,6 +111,16 @@ Use the memory layers for distinct jobs:
 5. Headroom for compression, compressed-content retrieval, and statistics; it
    is not the durable memory store.
 
+## Optional GBrain Retrieval Pilot
+
+GBrain is an opt-in, derived Markdown retrieval pilot; it is not a replacement
+for the Obsidian vault or Hindsight. The Compose profile is not enabled by the
+base stack, has no published port, has no Hermes MCP configuration, and mounts
+only an explicitly prepared staging corpus. Its PGLite data lives under
+`appdata/gbrain/` and can be rebuilt from that corpus. See
+[the GBrain pilot guide](docs/gbrain-pilot.md) for the required review,
+operator commands, and promotion gates.
+
 Profile templates live in `hermes-data/profile-templates/rootless/`. Optional
 role-specific `SOUL.md` overrides belong in
 `hermes-data/profile-overrides/<profile>/`; use placeholders rather than

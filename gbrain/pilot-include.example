@@ -1,0 +1,10 @@
+# Copy this file to appdata/gbrain/pilot-include-<profile>.txt, review every
+# entry, then run scripts/prepare-gbrain-pilot-corpus.sh --profile <profile>
+# --apply. Entries are vault-relative directories or Markdown files.
+#
+# The preparation script permits only Shared/ and Profiles/<profile>/ paths.
+# Do not add Daily Reviews, generated reports, .env files, credentials, or
+# unrelated profile material.
+Shared/Infrastructure
+Profiles/__PROFILE__/Infrastructure
+Profiles/__PROFILE__/Research Wikis
