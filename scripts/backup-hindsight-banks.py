@@ -8,6 +8,7 @@ import hashlib
 import importlib.util
 import json
 import sys
+import time
 import urllib.error
 import urllib.request
 import zipfile
@@ -39,7 +40,8 @@ class ApiClient:
         self.base_url = base_url.rstrip("/")
 
     def request_bytes(self, method: str, path: str) -> bytes:
-        request = urllib.request.Request(f"{self.base_url}{path}", headers={"Accept": "application/json"}, method=method)
+        url = path if path.startswith(("http://", "https://")) else f"{self.base_url}{path}"
+        request = urllib.request.Request(url, headers={"Accept": "application/json"}, method=method)
         try:
             with urllib.request.urlopen(request, timeout=60) as response:
                 return response.read()
@@ -123,6 +125,39 @@ def bank_counts(banks: list[dict[str, Any]]) -> dict[str, int]:
     return result
 
 
+def export_transfer_archive(
+    client: Any,
+    bank_id: str,
+    *,
+    sleep_fn: Any = time.sleep,
+    max_polls: int = 300,
+) -> bytes:
+    """Submit, poll, and download a Hindsight async document export."""
+    submit_path = f"/v1/default/banks/{bank_id}/document-transfer/export?include_observations=true"
+    submitted = client.request_json("POST", submit_path)
+    operation_id = submitted.get("operation_id")
+    if not isinstance(operation_id, str) or not operation_id:
+        raise BackupError(f"{bank_id}: async document export returned no operation_id")
+
+    operation_path = f"/v1/default/banks/{bank_id}/operations/{operation_id}"
+    for _ in range(max_polls):
+        operation = client.request_json("GET", operation_path)
+        status = operation.get("status")
+        if status == "completed":
+            metadata = operation.get("result_metadata")
+            download_url = metadata.get("download_url") if isinstance(metadata, dict) else None
+            if not isinstance(download_url, str) or not download_url:
+                raise BackupError(f"{bank_id}: completed document export returned no download_url")
+            return client.request_bytes("GET", download_url)
+        if status in {"failed", "cancelled", "not_found"}:
+            detail = operation.get("error_message") or status
+            raise BackupError(f"{bank_id}: async document export {status}: {detail}")
+        if status not in {"pending", "processing"}:
+            raise BackupError(f"{bank_id}: async document export returned invalid status: {status!r}")
+        sleep_fn(1)
+    raise BackupError(f"{bank_id}: async document export did not complete after {max_polls} polls")
+
+
 def export_bank(client: Any, backup_dir: Path, bank_id: str) -> dict[str, Any]:
     bank_dir = backup_dir / "banks" / bank_id
     documents_dir = bank_dir / "documents"
@@ -153,7 +188,7 @@ def export_bank(client: Any, backup_dir: Path, bank_id: str) -> dict[str, Any]:
         write_json(documents_dir / f"{document_id}.json", client.request_json("GET", f"/v1/default/banks/{bank_id}/documents/{document_id}"))
 
     archive_path = bank_dir / "document-transfer.zip"
-    archive_bytes = client.request_bytes("GET", f"/v1/default/banks/{bank_id}/document-transfer?include_observations=true")
+    archive_bytes = export_transfer_archive(client, bank_id)
     archive_path.write_bytes(archive_bytes)
     transfer = inspect_transfer_archive(archive_path, bank_id)
     sections["document-transfer.zip"] = {

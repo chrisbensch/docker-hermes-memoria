@@ -547,8 +547,15 @@ python3 scripts/backup-hindsight-banks.py \
   --report "$backup_parent/$backup_name-export-report.json"
 ```
 
+For each bank, the exporter submits Hindsight's asynchronous document-transfer
+export, polls its operation until completion, and downloads the resulting ZIP.
+It fails on terminal operation errors, invalid responses, or an export that
+does not complete within the polling limit. The removed synchronous
+`GET .../document-transfer` endpoint is not used.
+
 The exporter checks the bank inventory before and after export and fails if
-counts change. Validate checksums, manifests, observations, and per-bank totals
+counts change. It also runs the same backup validator before reporting success.
+Validate checksums, manifests, observations, and per-bank totals independently
 without contacting Hindsight:
 
 ```bash

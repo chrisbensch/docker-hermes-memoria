@@ -69,12 +69,20 @@ class RecordingExportClient:
             return {"items": []}
         if method == "GET" and bare_path == "/v1/default/banks/hermes-test/directives":
             return {"items": []}
+        if method == "POST" and bare_path == "/v1/default/banks/hermes-test/document-transfer/export":
+            return {"operation_id": "export-1", "status": "pending"}
+        if method == "GET" and bare_path == "/v1/default/banks/hermes-test/operations/export-1":
+            return {
+                "operation_id": "export-1",
+                "status": "completed",
+                "result_metadata": {"download_url": "/v1/default/files/download/export-1"},
+            }
         raise AssertionError(f"Unexpected request: {method} {path}")
 
     def request_bytes(self, method, path):
         self.calls.append((method, path))
         self.assert_equal(method, "GET")
-        self.assert_equal(path, "/v1/default/banks/hermes-test/document-transfer?include_observations=true")
+        self.assert_equal(path, "/v1/default/files/download/export-1")
         return transfer_archive()
 
     def assert_equal(self, actual, expected):
@@ -97,7 +105,18 @@ class HindsightBackupTests(unittest.TestCase):
         self.assertEqual(validation["totals"], {"banks": 1, "documents": 1, "facts": 1, "observations": 1, "memories": 2})
         self.assertEqual(report["totals"], validation["totals"])
         self.assertIn(("GET", "/v1/default/banks/hermes-test/entities?limit=100&offset=100"), client.calls)
+        self.assertIn(("POST", "/v1/default/banks/hermes-test/document-transfer/export?include_observations=true"), client.calls)
         self.assertEqual(manifest["banks"][0]["sections"]["document-transfer.zip"]["observations"], 1)
+
+    def test_async_export_rejects_failed_operation(self):
+        class FailedClient:
+            def request_json(self, method, path):
+                if method == "POST":
+                    return {"operation_id": "failed-1", "status": "pending"}
+                return {"operation_id": "failed-1", "status": "failed", "error_message": "export broke"}
+
+        with self.assertRaisesRegex(self.backup.BackupError, "export broke"):
+            self.backup.export_transfer_archive(FailedClient(), "hermes-test", sleep_fn=lambda _: None)
 
     def test_export_rejects_source_count_drift(self):
         with tempfile.TemporaryDirectory() as temporary:
