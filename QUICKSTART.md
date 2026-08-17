@@ -149,9 +149,11 @@ curl -fsS -X PUT "http://127.0.0.1:8888/v1/default/banks/hermes-research" \
   -d '{}'
 ```
 
-5. Optional: review UI exposure. Services bind to loopback by default. Before
-binding a UI to a trusted LAN, configure dashboard authentication and review the
-Hindsight and Headroom exposure warnings in [OPERATIONS.md](OPERATIONS.md).
+5. Optional: review UI exposure. Services bind to loopback by default. New
+installs enable the bundled `basic` dashboard-auth plugin, but it remains
+inactive until credentials are configured. Before binding a UI to a trusted
+LAN, configure dashboard authentication and review the Hindsight and Headroom
+exposure warnings in [OPERATIONS.md](OPERATIONS.md).
 
 ## Next Steps
 
