@@ -38,6 +38,12 @@ On minimal QEMU/virtual CPU profiles, the published Headroom proxy image can
 exit with `SIGILL`. Use host CPU passthrough and verify it with
 `curl -fsS http://127.0.0.1:8787/readyz`.
 
+New deployments use the explicitly pinned Hindsight and Headroom versions from
+`.env.example`. Keep those tags when copying the file; do not change them to
+`latest`. For a controlled upgrade, back up Hindsight first and follow the
+[image version update procedure](OPERATIONS.md#image-version-updates), including
+both Hermes MCP compatibility checks.
+
 ## Rootless Docker Workflow
 
 Use this when Docker is running in rootless mode for your deployment user.

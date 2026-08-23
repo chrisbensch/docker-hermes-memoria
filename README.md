@@ -31,6 +31,14 @@ backup, restore, and recovery procedures.
 | `searxng` and `searxng-core` | Local SearXNG endpoint used by Firecrawl. |
 | `camofox` | Browser service used by Hermes. |
 
+The current tested memory-sidecar baseline is Hindsight `0.9.1` and Headroom
+`0.36.5`, validated with Hermes Agent `0.20.4`. The sidecars use explicit tags
+in `.env.example` and the Compose fallbacks; do not replace them with floating
+`latest` tags. `HERMES_IMAGE` currently remains on `latest`, so after refreshing
+that image, run both profile-aware MCP checks in the
+[image update procedure](OPERATIONS.md#image-version-updates) before accepting
+the new combination.
+
 The default host bindings are loopback-only:
 
 | Endpoint | Default URL |

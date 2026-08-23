@@ -90,6 +90,70 @@ docker compose --env-file .env ps headroom-mcp
 Do not replace the stdio transport with the proxy URL. See the Headroom MCP
 procedure below for the canonical profile-aware test.
 
+## Image Version Updates
+
+Hindsight and Headroom are explicitly pinned because they persist data or sit
+on Hermes' MCP path. The current tested sidecar baseline is Hindsight `0.9.1`
+and Headroom `0.36.5`, validated with Hermes Agent `0.20.4`. Hermes currently
+uses a floating `latest` image, so treat a Hermes pull as a compatibility change
+even when `.env` itself is unchanged.
+
+Inspect configured and running versions before changing anything:
+
+```bash
+grep -E '^(HERMES_IMAGE|HINDSIGHT_IMAGE|HEADROOM_IMAGE)=' .env
+docker compose --env-file .env exec -T hermes hermes --version
+docker compose --env-file .env exec -T headroom-mcp headroom --version
+docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' \
+  "$(docker compose --env-file .env ps -q hindsight-mcp)"
+```
+
+Use release tags, not `latest`, for Hindsight and Headroom. Update `.env`,
+`.env.example`, and the Compose fallbacks together; when changing Hindsight,
+also update its `setup.sh` fallback. Then render the configuration before
+pulling:
+
+```bash
+docker compose --env-file .env config --quiet
+docker compose --env-file .env config --images
+docker compose --env-file .env pull headroom-proxy headroom-mcp hindsight-mcp
+```
+
+Recreate and validate Headroom independently so a failure does not also disturb
+Hindsight. The MCP test must use the active Hermes profile and the canonical
+rootless execution path:
+
+```bash
+docker compose --env-file .env up -d --no-deps headroom-proxy headroom-mcp
+curl -fsS http://127.0.0.1:8787/readyz
+profile=$(docker compose --env-file .env exec -T hermes \
+  sh -c 'tr -d "\r\n" < /opt/data/active_profile')
+docker compose --env-file .env exec -T hermes \
+  /package/admin/s6/command/s6-setuidgid hermes \
+  hermes -p "$profile" mcp test headroom
+```
+
+Before recreating Hindsight with a different image digest, create and verify a
+daily logical backup using the Restic procedure below. For changes whose release
+notes call out storage or migration risk, also take a weekly raw checkpoint.
+Then recreate only Hindsight and verify both its health and Hermes' HTTP MCP
+contract:
+
+```bash
+./scripts/backup-hermes-data.sh --mode daily
+docker compose --env-file .env up -d --no-deps hindsight-mcp
+curl -fsS http://127.0.0.1:8888/health
+docker compose --env-file .env exec -T hermes \
+  /package/admin/s6/command/s6-setuidgid hermes \
+  hermes -p "$profile" mcp test hindsight
+```
+
+If a compatibility check fails, restore the prior explicit image tag in `.env`
+and recreate only the affected service. Do not roll Hindsight back across an
+incompatible storage migration in place; use the validated logical restore or
+quiesced raw-checkpoint procedure instead. Keep pre-upgrade snapshots until
+health, MCP discovery, memory retrieval, and consolidation are accepted.
+
 ## Headroom MCP Stdio And Socket Access
 
 Headroom MCP is not an HTTP service. Hermes starts `headroom mcp serve` over
@@ -935,7 +999,7 @@ dry-run, pilot, and all-bank process documented above:
 ```bash
 mkdir -p "$appdata_host/hindsight"
 hindsight_image=$(awk -F= '$1 == "HINDSIGHT_IMAGE" {print substr($0, length($1) + 2)}' .env)
-hindsight_image=${hindsight_image:-ghcr.io/vectorize-io/hindsight:latest}
+hindsight_image=${hindsight_image:-ghcr.io/vectorize-io/hindsight:0.9.1}
 docker run --rm --user 0:0 \
   -v "$appdata_host/hindsight:/mnt" \
   --entrypoint sh "$hindsight_image" \
@@ -977,7 +1041,7 @@ test ! -e "$hindsight_previous"
 mv "$appdata_host/hindsight" "$hindsight_previous"
 mkdir -p "$appdata_host/hindsight"
 hindsight_image=$(awk -F= '$1 == "HINDSIGHT_IMAGE" {print substr($0, length($1) + 2)}' .env)
-hindsight_image=${hindsight_image:-ghcr.io/vectorize-io/hindsight:latest}
+hindsight_image=${hindsight_image:-ghcr.io/vectorize-io/hindsight:0.9.1}
 docker run --rm --user 0:0 \
   -v "$appdata_host/hindsight:/mnt" \
   --entrypoint sh "$hindsight_image" \
