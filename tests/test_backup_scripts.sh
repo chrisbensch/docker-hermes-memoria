@@ -33,9 +33,10 @@ grep -Fq 'Persistent=true' systemd/hermes-backup.timer
 grep -Fq 'Persistent=true' systemd/hermes-hindsight-raw-backup.timer
 grep -Fq 'Linger=yes' scripts/install-backup-timers.sh
 grep -Fq 'scripts/install-backup-timers.sh' README.md
-grep -Fq 'restic check' README.md
-grep -Fq '07:45 JST' README.md
-grep -Fq 'weekly raw Hindsight' README.md
+grep -Fq '[backup and recovery runbook](OPERATIONS.md#restic-backups)' README.md
+grep -Fq 'restic check' OPERATIONS.md
+grep -Fq '07:45 JST' OPERATIONS.md
+grep -Fq 'raw checkpoint at 08:00 JST on Saturday' OPERATIONS.md
 
 vault_script=scripts/fix-obsidian-vault-permissions.sh
 bash -n "$vault_script"
