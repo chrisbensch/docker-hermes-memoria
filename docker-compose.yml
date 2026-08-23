@@ -51,7 +51,7 @@ services:
         max-file: "5"
 
   hindsight-mcp:
-    image: ${HINDSIGHT_IMAGE:-ghcr.io/vectorize-io/hindsight:latest}
+    image: ${HINDSIGHT_IMAGE:-ghcr.io/vectorize-io/hindsight:0.9.1}
     restart: unless-stopped
     ports:
       - "${HINDSIGHT_API_BIND_HOST:-127.0.0.1}:${HINDSIGHT_API_HOST_PORT:-8888}:8888"
@@ -85,7 +85,7 @@ services:
         max-file: "5"
 
   headroom-proxy:
-    image: ${HEADROOM_IMAGE:-ghcr.io/headroomlabs-ai/headroom:0.34.0}
+    image: ${HEADROOM_IMAGE:-ghcr.io/headroomlabs-ai/headroom:0.36.5}
     restart: unless-stopped
     ports:
       - "${HEADROOM_PROXY_BIND_HOST:-127.0.0.1}:${HEADROOM_PROXY_HOST_PORT:-8787}:8787"
@@ -111,7 +111,7 @@ services:
         max-file: "5"
 
   headroom-mcp:
-    image: ${HEADROOM_IMAGE:-ghcr.io/headroomlabs-ai/headroom:0.34.0}
+    image: ${HEADROOM_IMAGE:-ghcr.io/headroomlabs-ai/headroom:0.36.5}
     container_name: hermes-headroom-mcp
     restart: unless-stopped
     entrypoint: ["sleep"]
