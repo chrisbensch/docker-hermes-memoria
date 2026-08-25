@@ -37,6 +37,12 @@ is healthy and does not require another Docker socket or an HTTP MCP URL.
 On minimal QEMU/virtual CPU profiles, the published Headroom proxy image can
 exit with `SIGILL`. Use host CPU passthrough and verify it with
 `curl -fsS http://127.0.0.1:8787/readyz`.
+The official proxy image uses the torch-free ONNX Kompress backend. A cold
+`ready=false`, `status=degraded`, `backend=null` Kompress health result is not
+by itself a failure: the optional model loads when eligible content first
+reaches the compressor. Use the eligible tool-result probe in
+[OPERATIONS.md](OPERATIONS.md#headroom-kompress-verification) before replacing
+the image or adding PyTorch.
 
 New deployments use the explicitly pinned Hindsight and Headroom versions from
 `.env.example`. Keep those tags when copying the file; do not change them to

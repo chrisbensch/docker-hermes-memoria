@@ -154,6 +154,67 @@ incompatible storage migration in place; use the validated logical restore or
 quiesced raw-checkpoint procedure instead. Keep pre-upgrade snapshots until
 health, MCP discovery, memory retrieval, and consolidation are accepted.
 
+## Headroom Kompress Verification
+
+The official Headroom proxy image includes the torch-free ONNX Kompress path.
+The startup warning that PyTorch is absent does not mean that ONNX Kompress is
+unavailable. Kompress is optional and lazily loaded, so a cold health response
+can legitimately show `enabled=true`, `ready=false`, `status=degraded`, and
+`backend=null` while the aggregate proxy remains ready.
+
+Do not test Kompress with a long ordinary assistant message. Headroom routes
+content selectively, and an ineligible message can correctly produce
+`router:noop`. Use a realistic tool result above the minimum compression size.
+Call the endpoint from inside the proxy container because `/v1/compress` is
+loopback-only by default and a request through Docker's published host port can
+be seen as non-loopback:
+
+```bash
+probe=$(for n in $(seq 1 220); do
+  printf 'Observation %s describes compression, recovery, relevance, and model warmup. ' "$n"
+done)
+
+jq -n --arg probe "$probe" '{
+  model: "gpt-5.4",
+  messages: [
+    {
+      role: "assistant",
+      content: null,
+      tool_calls: [{
+        id: "call_1",
+        type: "function",
+        function: {name: "read_report", arguments: "{}"}
+      }]
+    },
+    {role: "tool", tool_call_id: "call_1", content: $probe},
+    {role: "user", content: "Summarize the report."}
+  ],
+  config: {
+    target_ratio: 0.3,
+    protect_recent: 0,
+    compress_user_messages: true
+  }
+}' | docker compose --env-file .env exec -T headroom-proxy \
+  curl -fsS --max-time 45 \
+    -H 'Content-Type: application/json' \
+    --data-binary @- \
+    http://127.0.0.1:8787/v1/compress | \
+  jq '{tokens_before,tokens_after,tokens_saved,compression_ratio,transforms_applied}'
+
+curl -fsS http://127.0.0.1:8787/health | jq '.checks.kompress'
+```
+
+A working result has positive `tokens_saved`, names a routed transform such as
+`router:kompress:*` or `router:text:*`, and eventually reports a concrete
+backend such as `onnx`. The first eligible call can download and warm the model,
+so allow more time than a steady-state request. This diagnostic is recorded in
+Headroom's local statistics. A `200` response with `router:noop` proves only
+that the request passed through; it does not prove that Kompress ran.
+
+`--mode token` prioritizes token reduction but does not make every message
+eligible for Kompress. Use `HEADROOM_FORCE_KOMPRESS_ALL=1` only for a controlled
+comparison, not as a substitute for a representative tool-result test.
+
 ## Headroom MCP Stdio And Socket Access
 
 Headroom MCP is not an HTTP service. Hermes starts `headroom mcp serve` over
@@ -351,6 +412,42 @@ Headroom history:        http://<server-ip>:8787/stats-history
 
 Do not expose Hindsight or Headroom directly to an untrusted network. Prefer an
 SSH or Tailscale tunnel when broader bind addresses are unnecessary.
+
+### Headroom Host Binding And Inbound Token Caveat
+
+`HEADROOM_PROXY_BIND_HOST` controls the published host interface. Keep its
+default value at `127.0.0.1` unless direct LAN access is required. Do not change
+the container-side `HEADROOM_HOST=0.0.0.0` or `--host 0.0.0.0`; those settings
+let Docker and other Compose services reach the process inside the container
+and do not by themselves publish the port on every host interface.
+
+After changing the host bind, recreate only the proxy and confirm that Docker
+shows a loopback publication:
+
+```bash
+docker compose --env-file .env up -d --no-deps --force-recreate headroom-proxy
+docker compose --env-file .env ps headroom-proxy
+curl -fsS http://127.0.0.1:8787/readyz
+```
+
+The port column must show `127.0.0.1:8787->8787/tcp`, not
+`0.0.0.0:8787->8787/tcp`.
+
+Headroom `0.36.5` accepts `HEADROOM_PROXY_TOKEN` for non-loopback HTTP callers,
+but its stdio MCP server does not attach that token when it calls the proxy's
+retrieval and statistics endpoints. Adding the token to `headroom-proxy` alone
+can therefore make `headroom_retrieve` and proxy-backed `headroom_stats` return
+`401`; the unauthenticated health endpoints can still pass, and ordinary MCP
+tool discovery does not exercise this path. Do not treat a successful
+`hermes ... mcp test headroom` result alone as validation of a token-protected
+deployment.
+
+For this Compose topology, prefer the loopback bind plus an SSH or private
+overlay tunnel. If direct LAN binding and `HEADROOM_PROXY_TOKEN` are required,
+test an actual proxy-backed retrieval and statistics call from Hermes before
+accepting the change, and ensure every direct HTTP client sends either
+`Authorization: Bearer <token>` or `X-Headroom-Proxy-Token: <token>`. Keep the
+token only in ignored `.env` or an external secret store.
 
 ## Migrated Data Validation
 
