@@ -1,6 +1,7 @@
 .env
 .env.bak-*
 .env.before-*.bak
+docker-compose.yml.*.bak
 __pycache__/
 *.py[cod]
 /tmp/

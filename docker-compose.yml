@@ -95,7 +95,7 @@ services:
       OPENAI_TARGET_API_URL: ${OPENAI_TARGET_API_URL:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    command: ["--host", "0.0.0.0", "--port", "8787"]
+    command: ["--host", "0.0.0.0", "--port", "8787", "--mode", "token"]
     volumes:
       - ${APPDATA_DIR:-./appdata}/headroom:/home/nonroot/.headroom
     healthcheck:
