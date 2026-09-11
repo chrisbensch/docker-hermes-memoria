@@ -43,7 +43,19 @@ services:
       HERMES_DASHBOARD_PORT: 9119
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    command: ["gateway", "run"]
+    # Reconcile the dashboard auth provider on every start. Hermes upgrades can
+    # preserve the password hash while resetting the enabled-plugin list; the
+    # dashboard runs with the machine (maestro) profile, so repair both configs
+    # before handing control back to the image's normal dispatcher.
+    command:
+      - sh
+      - -lc
+      - >-
+        /opt/hermes/.venv/bin/hermes -p default plugins enable basic
+        >/dev/null 2>&1 || true;
+        /opt/hermes/.venv/bin/hermes -p maestro plugins enable basic
+        >/dev/null 2>&1 || true;
+        exec /opt/hermes/docker/entrypoint-dispatch.sh gateway run
     logging:
       driver: json-file
       options:
@@ -90,6 +102,7 @@ services:
     ports:
       - "${HEADROOM_PROXY_BIND_HOST:-127.0.0.1}:${HEADROOM_PROXY_HOST_PORT:-8787}:8787"
     environment:
+      HOME: /home/nonroot
       HEADROOM_HOST: 0.0.0.0
       HEADROOM_TELEMETRY: ${HEADROOM_TELEMETRY:-off}
       OPENAI_TARGET_API_URL: ${OPENAI_TARGET_API_URL:-}
@@ -117,6 +130,7 @@ services:
     entrypoint: ["sleep"]
     command: ["infinity"]
     environment:
+      HOME: /home/nonroot
       HEADROOM_PROXY_URL: http://headroom-proxy:8787
     volumes:
       - ${APPDATA_DIR:-./appdata}/headroom:/home/nonroot/.headroom
