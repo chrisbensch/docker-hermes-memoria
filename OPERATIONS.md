@@ -90,6 +90,131 @@ docker compose --env-file .env ps headroom-mcp
 Do not replace the stdio transport with the proxy URL. See the Headroom MCP
 procedure below for the canonical profile-aware test.
 
+## Image Version Updates
+
+Hindsight and Headroom are explicitly pinned because they persist data or sit
+on Hermes' MCP path. The current tested sidecar baseline is Hindsight `0.9.1`
+and Headroom `0.36.5`, validated with Hermes Agent `0.20.4`. Hermes currently
+uses a floating `latest` image, so treat a Hermes pull as a compatibility change
+even when `.env` itself is unchanged.
+
+Inspect configured and running versions before changing anything:
+
+```bash
+grep -E '^(HERMES_IMAGE|HINDSIGHT_IMAGE|HEADROOM_IMAGE)=' .env
+docker compose --env-file .env exec -T hermes hermes --version
+docker compose --env-file .env exec -T headroom-mcp headroom --version
+docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' \
+  "$(docker compose --env-file .env ps -q hindsight-mcp)"
+```
+
+Use release tags, not `latest`, for Hindsight and Headroom. Update `.env`,
+`.env.example`, and the Compose fallbacks together; when changing Hindsight,
+also update its `setup.sh` fallback. Then render the configuration before
+pulling:
+
+```bash
+docker compose --env-file .env config --quiet
+docker compose --env-file .env config --images
+docker compose --env-file .env pull headroom-proxy headroom-mcp hindsight-mcp
+```
+
+Recreate and validate Headroom independently so a failure does not also disturb
+Hindsight. The MCP test must use the active Hermes profile and the canonical
+rootless execution path:
+
+```bash
+docker compose --env-file .env up -d --no-deps headroom-proxy headroom-mcp
+curl -fsS http://127.0.0.1:8787/readyz
+profile=$(docker compose --env-file .env exec -T hermes \
+  sh -c 'tr -d "\r\n" < /opt/data/active_profile')
+docker compose --env-file .env exec -T hermes \
+  /package/admin/s6/command/s6-setuidgid hermes \
+  hermes -p "$profile" mcp test headroom
+```
+
+Before recreating Hindsight with a different image digest, create and verify a
+daily logical backup using the Restic procedure below. For changes whose release
+notes call out storage or migration risk, also take a weekly raw checkpoint.
+Then recreate only Hindsight and verify both its health and Hermes' HTTP MCP
+contract:
+
+```bash
+./scripts/backup-hermes-data.sh --mode daily
+docker compose --env-file .env up -d --no-deps hindsight-mcp
+curl -fsS http://127.0.0.1:8888/health
+docker compose --env-file .env exec -T hermes \
+  /package/admin/s6/command/s6-setuidgid hermes \
+  hermes -p "$profile" mcp test hindsight
+```
+
+If a compatibility check fails, restore the prior explicit image tag in `.env`
+and recreate only the affected service. Do not roll Hindsight back across an
+incompatible storage migration in place; use the validated logical restore or
+quiesced raw-checkpoint procedure instead. Keep pre-upgrade snapshots until
+health, MCP discovery, memory retrieval, and consolidation are accepted.
+
+## Headroom Kompress Verification
+
+The official Headroom proxy image includes the torch-free ONNX Kompress path.
+The startup warning that PyTorch is absent does not mean that ONNX Kompress is
+unavailable. Kompress is optional and lazily loaded, so a cold health response
+can legitimately show `enabled=true`, `ready=false`, `status=degraded`, and
+`backend=null` while the aggregate proxy remains ready.
+
+Do not test Kompress with a long ordinary assistant message. Headroom routes
+content selectively, and an ineligible message can correctly produce
+`router:noop`. Use a realistic tool result above the minimum compression size.
+Call the endpoint from inside the proxy container because `/v1/compress` is
+loopback-only by default and a request through Docker's published host port can
+be seen as non-loopback:
+
+```bash
+probe=$(for n in $(seq 1 220); do
+  printf 'Observation %s describes compression, recovery, relevance, and model warmup. ' "$n"
+done)
+
+jq -n --arg probe "$probe" '{
+  model: "gpt-5.4",
+  messages: [
+    {
+      role: "assistant",
+      content: null,
+      tool_calls: [{
+        id: "call_1",
+        type: "function",
+        function: {name: "read_report", arguments: "{}"}
+      }]
+    },
+    {role: "tool", tool_call_id: "call_1", content: $probe},
+    {role: "user", content: "Summarize the report."}
+  ],
+  config: {
+    target_ratio: 0.3,
+    protect_recent: 0,
+    compress_user_messages: true
+  }
+}' | docker compose --env-file .env exec -T headroom-proxy \
+  curl -fsS --max-time 45 \
+    -H 'Content-Type: application/json' \
+    --data-binary @- \
+    http://127.0.0.1:8787/v1/compress | \
+  jq '{tokens_before,tokens_after,tokens_saved,compression_ratio,transforms_applied}'
+
+curl -fsS http://127.0.0.1:8787/health | jq '.checks.kompress'
+```
+
+A working result has positive `tokens_saved`, names a routed transform such as
+`router:kompress:*` or `router:text:*`, and eventually reports a concrete
+backend such as `onnx`. The first eligible call can download and warm the model,
+so allow more time than a steady-state request. This diagnostic is recorded in
+Headroom's local statistics. A `200` response with `router:noop` proves only
+that the request passed through; it does not prove that Kompress ran.
+
+`--mode token` prioritizes token reduction but does not make every message
+eligible for Kompress. Use `HEADROOM_FORCE_KOMPRESS_ALL=1` only for a controlled
+comparison, not as a substitute for a representative tool-result test.
+
 ## Headroom MCP Stdio And Socket Access
 
 Headroom MCP is not an HTTP service. Hermes starts `headroom mcp serve` over
@@ -182,9 +307,9 @@ scripts/set-dashboard-password.sh
 ```
 
 The helper creates a timestamped backup next to `/opt/data/config.yaml`, writes
-the following base runtime configuration keys, and recreates the Hermes service
-so it reloads the configuration. This briefly restarts both gateway and
-Dashboard:
+the following base runtime configuration keys, enables the bundled `basic`
+dashboard-auth plugin, and recreates the Hermes service so it reloads the
+configuration. This briefly restarts both gateway and Dashboard:
 
 ```yaml
 dashboard:
@@ -287,6 +412,42 @@ Headroom history:        http://<server-ip>:8787/stats-history
 
 Do not expose Hindsight or Headroom directly to an untrusted network. Prefer an
 SSH or Tailscale tunnel when broader bind addresses are unnecessary.
+
+### Headroom Host Binding And Inbound Token Caveat
+
+`HEADROOM_PROXY_BIND_HOST` controls the published host interface. Keep its
+default value at `127.0.0.1` unless direct LAN access is required. Do not change
+the container-side `HEADROOM_HOST=0.0.0.0` or `--host 0.0.0.0`; those settings
+let Docker and other Compose services reach the process inside the container
+and do not by themselves publish the port on every host interface.
+
+After changing the host bind, recreate only the proxy and confirm that Docker
+shows a loopback publication:
+
+```bash
+docker compose --env-file .env up -d --no-deps --force-recreate headroom-proxy
+docker compose --env-file .env ps headroom-proxy
+curl -fsS http://127.0.0.1:8787/readyz
+```
+
+The port column must show `127.0.0.1:8787->8787/tcp`, not
+`0.0.0.0:8787->8787/tcp`.
+
+Headroom `0.36.5` accepts `HEADROOM_PROXY_TOKEN` for non-loopback HTTP callers,
+but its stdio MCP server does not attach that token when it calls the proxy's
+retrieval and statistics endpoints. Adding the token to `headroom-proxy` alone
+can therefore make `headroom_retrieve` and proxy-backed `headroom_stats` return
+`401`; the unauthenticated health endpoints can still pass, and ordinary MCP
+tool discovery does not exercise this path. Do not treat a successful
+`hermes ... mcp test headroom` result alone as validation of a token-protected
+deployment.
+
+For this Compose topology, prefer the loopback bind plus an SSH or private
+overlay tunnel. If direct LAN binding and `HEADROOM_PROXY_TOKEN` are required,
+test an actual proxy-backed retrieval and statistics call from Hermes before
+accepting the change, and ensure every direct HTTP client sends either
+`Authorization: Bearer <token>` or `X-Headroom-Proxy-Token: <token>`. Keep the
+token only in ignored `.env` or an external secret store.
 
 ## Migrated Data Validation
 
@@ -547,8 +708,15 @@ python3 scripts/backup-hindsight-banks.py \
   --report "$backup_parent/$backup_name-export-report.json"
 ```
 
+For each bank, the exporter submits Hindsight's asynchronous document-transfer
+export, polls its operation until completion, and downloads the resulting ZIP.
+It fails on terminal operation errors, invalid responses, or an export that
+does not complete within the polling limit. The removed synchronous
+`GET .../document-transfer` endpoint is not used.
+
 The exporter checks the bank inventory before and after export and fails if
-counts change. Validate checksums, manifests, observations, and per-bank totals
+counts change. It also runs the same backup validator before reporting success.
+Validate checksums, manifests, observations, and per-bank totals independently
 without contacting Hindsight:
 
 ```bash
@@ -928,7 +1096,7 @@ dry-run, pilot, and all-bank process documented above:
 ```bash
 mkdir -p "$appdata_host/hindsight"
 hindsight_image=$(awk -F= '$1 == "HINDSIGHT_IMAGE" {print substr($0, length($1) + 2)}' .env)
-hindsight_image=${hindsight_image:-ghcr.io/vectorize-io/hindsight:latest}
+hindsight_image=${hindsight_image:-ghcr.io/vectorize-io/hindsight:0.9.1}
 docker run --rm --user 0:0 \
   -v "$appdata_host/hindsight:/mnt" \
   --entrypoint sh "$hindsight_image" \
@@ -970,7 +1138,7 @@ test ! -e "$hindsight_previous"
 mv "$appdata_host/hindsight" "$hindsight_previous"
 mkdir -p "$appdata_host/hindsight"
 hindsight_image=$(awk -F= '$1 == "HINDSIGHT_IMAGE" {print substr($0, length($1) + 2)}' .env)
-hindsight_image=${hindsight_image:-ghcr.io/vectorize-io/hindsight:latest}
+hindsight_image=${hindsight_image:-ghcr.io/vectorize-io/hindsight:0.9.1}
 docker run --rm --user 0:0 \
   -v "$appdata_host/hindsight:/mnt" \
   --entrypoint sh "$hindsight_image" \

@@ -646,7 +646,7 @@ mkdir -p \
   "$appdata_host_dir/firecrawl-rabbitmq" \
   "$appdata_host_dir/firecrawl-postgres"
 
-hindsight_image=$(env_default "$env_file" HINDSIGHT_IMAGE ghcr.io/vectorize-io/hindsight:latest)
+hindsight_image=$(env_default "$env_file" HINDSIGHT_IMAGE ghcr.io/vectorize-io/hindsight:0.9.1)
 set_env_var "$env_file" HINDSIGHT_IMAGE "$hindsight_image"
 prepare_rootless_hindsight_dir "$hindsight_image" "$appdata_host_dir/hindsight"
 

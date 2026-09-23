@@ -31,6 +31,14 @@ backup, restore, and recovery procedures.
 | `searxng` and `searxng-core` | Local SearXNG endpoint used by Firecrawl. |
 | `camofox` | Browser service used by Hermes. |
 
+The current tested memory-sidecar baseline is Hindsight `0.9.1` and Headroom
+`0.36.5`, validated with Hermes Agent `0.20.4`. The sidecars use explicit tags
+in `.env.example` and the Compose fallbacks; do not replace them with floating
+`latest` tags. `HERMES_IMAGE` currently remains on `latest`, so after refreshing
+that image, run both profile-aware MCP checks in the
+[image update procedure](OPERATIONS.md#image-version-updates) before accepting
+the new combination.
+
 The default host bindings are loopback-only:
 
 | Endpoint | Default URL |
@@ -110,6 +118,16 @@ Use the memory layers for distinct jobs:
    cross-profile material.
 5. Headroom for compression, compressed-content retrieval, and statistics; it
    is not the durable memory store.
+
+## Optional GBrain Retrieval Pilot
+
+GBrain is an opt-in, derived Markdown retrieval pilot; it is not a replacement
+for the Obsidian vault or Hindsight. The Compose profile is not enabled by the
+base stack, has no published port, has no Hermes MCP configuration, and mounts
+only an explicitly prepared staging corpus. Its PGLite data lives under
+`appdata/gbrain/` and can be rebuilt from that corpus. See
+[the GBrain pilot guide](docs/gbrain-pilot.md) for the required review,
+operator commands, and promotion gates.
 
 Profile templates live in `hermes-data/profile-templates/rootless/`. Optional
 role-specific `SOUL.md` overrides belong in

@@ -1,0 +1,47 @@
+diff --git a/src/commands/serve-http.ts b/src/commands/serve-http.ts
+index dfa4c28..b0ca3f9 100644
+--- a/src/commands/serve-http.ts
++++ b/src/commands/serve-http.ts
+@@ -75,5 +75,6 @@ export function waitForHttpServerLifecycle(
+   options: {
+     signals?: SignalSource;
+     register?: CleanupRegistrar;
++    cleanup?: () => Promise<void>;
+   } = {},
+ ): Promise<void> {
+@@ -96,7 +97,12 @@ export function waitForHttpServerLifecycle(
+       });
+       return closePromise;
+     };
+-
+-    const deregister = register('http-server', closeServer);
++    // SIGTERM reaches the shared cleanup registry rather than onSigint below.
++    // Close the listener before PGLite so no request can race its disconnect.
++    const closeAndCleanup = async (): Promise<void> => {
++      await closeServer();
++      await options.cleanup?.();
++    };
++    const deregister = register('http-server', closeAndCleanup);
+-
++
+     const finish = (error?: Error) => {
+@@ -2519,4 +2525,17 @@ export async function runServeHttp(engine: BrainEngine, options: ServeHttpOptio
+   });
+-
++
+-  await waitForHttpServerLifecycle(httpServer);
++  // `serve` deliberately bypasses the CLI's normal teardown. Make the HTTP
++  // path own the PGLite lifecycle on both SIGINT and SIGTERM instead. The
++  // shared cleanup registry invokes this after closing the listener; the
++  // finally covers ordinary listener close/error paths.
++  let disconnectPromise: Promise<void> | null = null;
++  const disconnectEngine = (): Promise<void> => {
++    if (!disconnectPromise) disconnectPromise = engine.disconnect();
++    return disconnectPromise;
++  };
++  try {
++    await waitForHttpServerLifecycle(httpServer, { cleanup: disconnectEngine });
++  } finally {
++    await disconnectEngine();
++  }
+ }
