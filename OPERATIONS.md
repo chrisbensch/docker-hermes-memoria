@@ -846,7 +846,12 @@ network path works.
 The host-side wrapper stages container-readable exports, then Restic encrypts,
 deduplicates, uploads, and applies retention. Daily logical backups include
 Hermes data and online SQLite exports, the Memory Vault, Headroom, Firecrawl
-Postgres, deployment configuration, and validated logical Hindsight data.
+Postgres, GBrain Postgres, the Metabase application database when initialized,
+deployment configuration, and validated logical Hindsight data. The GBrain
+archive is included after its Compose container has first been created. If that
+container exists but is stopped, the daily job fails instead of silently
+omitting an initialized database. The Metabase archive preserves dashboards,
+questions, users, and settings; it does not duplicate GBrain content.
 Weekly raw backups briefly stop only Hindsight to checkpoint `.pg0`. Redis and
 RabbitMQ queue state, caches, logs, generated images, and generic temporary data
 are intentionally outside the durable scope.
@@ -966,6 +971,8 @@ directory:
 ```bash
 find "$restore_root" -name metadata.json -print
 find "$restore_root" -name hindsight-validation.json -print
+find "$restore_root" -name gbrain-postgres.dump.json -print
+find "$restore_root" -name metabase-postgres.dump.json -print
 ```
 
 Validate the restored logical Hindsight directory before testing an import:
@@ -974,7 +981,46 @@ Validate the restored logical Hindsight directory before testing an import:
 python3 scripts/validate-hindsight-bank-backup.py \
   --backup-dir /path/inside/restore-root/hindsight-logical \
   --report "$restore_root/hindsight-validation-recheck.json"
+
+python3 scripts/validate-gbrain-postgres-backup.py \
+  --backup /path/inside/restore-root/gbrain-postgres.dump \
+  --report "$restore_root/gbrain-validation-recheck.json"
 ```
+
+The GBrain validator checks the archive checksum, metadata, and PostgreSQL
+archive catalog without connecting to a database. For a restore drill, start a
+separate, empty `gbrain-postgres` target and run the read-only preflight first:
+
+```bash
+./scripts/restore-gbrain-postgres-backup.sh \
+  --backup /path/inside/restore-root/gbrain-postgres.dump
+```
+
+Only after confirming that the checkout points at the isolated target, repeat
+with `--apply`. The restore script stops GBrain if it is running, restores with
+`pg_restore --exit-on-error`, and restarts it. It will not clean or overwrite a
+database containing user tables. To replace a populated installation, create
+and validate a current backup, provision a separate empty database, restore
+there, and switch over only after application-level verification.
+
+Validate a restored Metabase application archive and its checksum metadata,
+then optionally inspect it with local PostgreSQL tooling:
+
+```bash
+python3 scripts/validate-gbrain-postgres-backup.py \
+  --database metabase \
+  --backup /path/inside/restore-root/metabase-postgres.dump
+pg_restore --list /path/inside/restore-root/metabase-postgres.dump >/dev/null
+# If pg_restore is not installed on the host:
+docker compose --env-file .env exec -T gbrain-postgres pg_restore --list \
+  < /path/inside/restore-root/metabase-postgres.dump >/dev/null
+```
+
+Restore it only into an empty `metabase` database created by
+`./setup.sh --gbrain-metabase`. Stop Metabase first, apply the archive with
+`pg_restore --exit-on-error --no-owner --no-privileges`, restart Metabase, and
+retain the original `METABASE_ENCRYPTION_SECRET_KEY`; changing that key makes
+stored datasource passwords unreadable.
 
 Use a separate Compose checkout and separate appdata directories for a full
 restore drill. Never point the test stack at production bind mounts or publish

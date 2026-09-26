@@ -16,6 +16,31 @@ sudo apt-get install -y acl
 The `acl` package supplies `setfacl`, which setup uses to keep the Obsidian
 vault writable by both container Hermes and the host deployment user.
 
+The shared GBrain profile is optional and initialized separately after the base
+setup. Its default path uses an existing self-hosted OpenAI-compatible
+embedding server and validates the model's real vector width before touching
+the database:
+
+```bash
+./setup.sh --gbrain
+```
+
+Use `./setup.sh --gbrain --no-embedding` for keyless keyword-only retrieval.
+No LAN endpoint or provider credential is committed; see
+[the GBrain guide](docs/gbrain-compose.md) for the secret-file layout.
+
+To add the optional read-only Metabase visualization layer after GBrain is
+initialized:
+
+```bash
+./setup.sh --gbrain-metabase
+```
+
+The public default is `http://127.0.0.1:3000`. Set `METABASE_BIND_HOST` in the
+ignored `.env` to the host's trusted LAN address before setup when remote
+browser access is required. Complete the first-run datasource connection using
+[the Metabase guide](docs/gbrain-metabase.md).
+
 To inspect a clone without writing files, run:
 
 ```bash

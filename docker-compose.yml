@@ -142,62 +142,127 @@ services:
         max-size: "10m"
         max-file: "5"
 
-  # This is deliberately an opt-in, one-shot CLI service. It has no host port,
-  # is not configured as a Hermes MCP server, and sees only a staging corpus.
-  # Use scripts/run-gbrain-pilot.sh instead of starting it with `up`.
-  gbrain-pilot:
-    profiles: ["gbrain-pilot"]
-    build:
-      context: ./gbrain
-      args:
-        GBRAIN_REF: ${GBRAIN_REF:-c6dc0adf26a2d20df1147d2ec87c8922ca86d410}
-    # Container root maps to the rootless Docker deployment user on the host.
-    # Do not force HERMES_UID here: it maps to a subordinate UID and cannot
-    # write the host-owned, derived GBrain state directory.
-    user: "0:0"
+  # Private Postgres + pgvector engine for the shared GBrain. It has no route
+  # onto the application network, no published port, and no credentials in the
+  # Hermes container.
+  gbrain-postgres:
+    profiles: ["gbrain", "gbrain-viz"]
+    image: ${GBRAIN_POSTGRES_IMAGE:-pgvector/pgvector:pg16}
     environment:
-      GBRAIN_HOME: /var/lib/gbrain/home
-      GBRAIN_NO_ONBOARD_NUDGE: "1"
-      # Avoid GBrain's detached update-check hook; the source revision is
-      # reviewed and updated explicitly through GBRAIN_REF instead.
-      GBRAIN_SKIP_STARTUP_HOOKS: "1"
+      POSTGRES_USER: gbrain
+      POSTGRES_DB: gbrain
+      POSTGRES_PASSWORD_FILE: /run/gbrain-secrets/postgres-password
     volumes:
-      # GBrain state is a derived index. The canonical Markdown never resides
-      # here, and no provider credentials are passed into this container.
-      - ${APPDATA_DIR:-./appdata}/gbrain:/var/lib/gbrain
-      # The runner imports this generated staging corpus only; the live vault
-      # is intentionally not mounted into GBrain.
-      - ${APPDATA_DIR:-./appdata}/gbrain/staging:/staging:ro
-    init: true
-    restart: "no"
+      - type: bind
+        source: ${APPDATA_DIR:-./appdata}/gbrain/postgres
+        target: /var/lib/postgresql/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${GBRAIN_POSTGRES_PASSWORD_FILE:-./appdata/gbrain/secrets/postgres-password.txt}
+        target: /run/gbrain-secrets/postgres-password
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      - gbrain-db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gbrain -d gbrain"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    restart: unless-stopped
     logging:
       driver: json-file
       options:
         max-size: "5m"
         max-file: "3"
 
-  # Phase 1 only: private HTTP/OAuth surface validation over a disposable,
-  # synthetic PGLite brain. It is not a Hermes MCP server and never mounts the
-  # live vault. The published port is restricted to the Docker host loopback.
-  gbrain-http-test:
-    profiles: ["gbrain-http-test"]
+  # Opt-in shared GBrain HTTP service. It is deliberately not part of the base
+  # stack: enable it only after initializing the database and provisioning one
+  # OAuth client per Hermes profile. DCR stays off; clients are owner-created.
+  # The service has no published host port and never mounts the live vault.
+  gbrain:
+    profiles: ["gbrain"]
     build:
       context: ./gbrain
       args:
-        GBRAIN_REF: ${GBRAIN_REF:-c6dc0adf26a2d20df1147d2ec87c8922ca86d410}
-    # Same rootless bind-mount rule as the one-shot pilot service above.
+        GBRAIN_REF: ${GBRAIN_REF:-31f257a0a7b218b40e03d302bc6913c99f26f0ec}
     user: "0:0"
+    depends_on:
+      gbrain-postgres:
+        condition: service_healthy
     environment:
-      GBRAIN_HOME: /var/lib/gbrain/home/http-test
+      GBRAIN_HOME: /var/lib/gbrain/home
       GBRAIN_NO_ONBOARD_NUDGE: "1"
       GBRAIN_SKIP_STARTUP_HOOKS: "1"
-    command: ["serve", "--http", "--port", "3131", "--bind", "0.0.0.0"]
+      GBRAIN_DATABASE_PASSWORD_FILE: /run/gbrain-secrets/postgres-password
+      GBRAIN_ADMIN_BOOTSTRAP_TOKEN_FILE: /run/gbrain-secrets/admin-token
+      GBRAIN_EMBEDDING_API_KEY_FILE: /run/gbrain-secrets/embedding-api-key
+      GBRAIN_EMBEDDING_BASE_URL_CONFIG: ${GBRAIN_EMBEDDING_BASE_URL:-}
+      GBRAIN_EMBEDDING_MODEL_CONFIG: ${GBRAIN_EMBEDDING_MODEL:-}
+      GBRAIN_EMBEDDING_DIMENSIONS_CONFIG: ${GBRAIN_EMBEDDING_DIMENSIONS:-}
+      GBRAIN_LITELLM_API_KEY_FILE: /run/gbrain-secrets/litellm-api-key
+      GBRAIN_LITELLM_BASE_URL_CONFIG: ${GBRAIN_LITELLM_BASE_URL:-}
+      GBRAIN_CHAT_MODEL_CONFIG: ${GBRAIN_CHAT_MODEL:-}
+      GBRAIN_EXPANSION_MODEL_CONFIG: ${GBRAIN_EXPANSION_MODEL:-}
+      GBRAIN_MODEL_DISCOVERY_CONFIG: ${GBRAIN_MODEL_DISCOVERY:-}
+    command: ["serve", "--http", "--surface", "full", "--port", "3131", "--bind", "0.0.0.0"]
+    # The default is loopback-only. Set GBRAIN_HTTP_BIND_HOST to the host's
+    # trusted LAN address when the authenticated /admin dashboard is needed.
     ports:
-      - "127.0.0.1:${GBRAIN_HTTP_TEST_HOST_PORT:-3131}:3131"
+      - "${GBRAIN_HTTP_BIND_HOST:-127.0.0.1}:${GBRAIN_HTTP_HOST_PORT:-3131}:3131"
+    expose:
+      - "3131"
     volumes:
-      - ${APPDATA_DIR:-./appdata}/gbrain:/var/lib/gbrain
+      # The home holds GBrain configuration and source metadata. The entrypoint
+      # removes the database URL that upstream init writes to config.json;
+      # database and owner credentials arrive as separate read-only files.
+      - type: bind
+        source: ${APPDATA_DIR:-./appdata}/gbrain/shared
+        target: /var/lib/gbrain/home
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${GBRAIN_POSTGRES_PASSWORD_FILE:-./appdata/gbrain/secrets/postgres-password.txt}
+        target: /run/gbrain-secrets/postgres-password
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${GBRAIN_ADMIN_TOKEN_FILE:-./appdata/gbrain/secrets/admin-token.txt}
+        target: /run/gbrain-secrets/admin-token
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        # /dev/null keeps upgrades from older .env files compatible. Guided
+        # setup writes an explicit private file path before initialization.
+        source: ${GBRAIN_EMBEDDING_API_KEY_FILE:-/dev/null}
+        target: /run/gbrain-secrets/embedding-api-key
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        # Optional OpenAI-compatible reasoning gateway credential. It stays
+        # separate from the embedding provider so both can be self-hosted.
+        source: ${GBRAIN_LITELLM_API_KEY_FILE:-/dev/null}
+        target: /run/gbrain-secrets/litellm-api-key
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      - default
+      - gbrain-db
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3131/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
     init: true
-    restart: "no"
+    restart: unless-stopped
     stop_grace_period: 30s
     logging:
       driver: json-file
@@ -205,44 +270,83 @@ services:
         max-size: "5m"
         max-file: "3"
 
-  # Phase 3 only: a deliberately narrow MCP facade over the synthetic GBrain
-  # HTTP test. It owns the OAuth read token and exposes only the reviewed
-  # allowlist, so callers cannot discover or invoke GBrain mutation tools.
-  # It is not yet configured in any Hermes profile.
-  gbrain-mcp-allowlist-test:
-    profiles: ["gbrain-proxy-test"]
+  # Hermes-facing identity broker. Each /mcp/<profile> route requires that
+  # profile's inbound token and uses its distinct upstream OAuth client.
+  gbrain-mcp:
+    profiles: ["gbrain"]
     build:
       context: ./gbrain-allowlist-proxy
-    # In rootless Docker, container root maps to the unprivileged deployment
-    # user and can read the owner-only confidential-client bind mount.
     user: "0:0"
     depends_on:
-      gbrain-http-test:
-        condition: service_started
+      gbrain:
+        condition: service_healthy
     environment:
       PORT: "3132"
-      GBRAIN_UPSTREAM_MCP_URL: http://gbrain-http-test:3131/mcp
-      GBRAIN_UPSTREAM_TOKEN_URL: http://gbrain-http-test:3131/token
-      GBRAIN_OAUTH_CREDENTIALS_FILE: /run/gbrain-oauth/client.env
-      # Begin with one reviewed retrieval operation. Add any other read tool
-      # only after an explicit policy and verification update.
-      GBRAIN_ALLOWED_TOOLS: search
+      GBRAIN_UPSTREAM_MCP_URL: http://gbrain:3131/mcp
+      GBRAIN_UPSTREAM_TOKEN_URL: http://gbrain:3131/token
+      GBRAIN_PROFILE_CREDENTIALS_DIR: /run/gbrain-oauth/profiles
     volumes:
       - type: bind
-        source: ${APPDATA_DIR:-./appdata}/gbrain/secrets/http-test-read-verifier-phase2.env
-        target: /run/gbrain-oauth/client.env
+        source: ${GBRAIN_PROFILE_CREDENTIALS_DIR:-./appdata/gbrain/secrets/profiles}
+        target: /run/gbrain-oauth/profiles
         read_only: true
         bind:
           create_host_path: false
-    ports:
-      - "127.0.0.1:${GBRAIN_ALLOWLIST_TEST_HOST_PORT:-3132}:3132"
+    expose:
+      - "3132"
     init: true
-    restart: "no"
+    restart: unless-stopped
     logging:
       driver: json-file
       options:
         max-size: "5m"
         max-file: "3"
+
+  # Optional LAN-facing analytics for GBrain. Metabase stores its own users,
+  # dashboards, and questions in a separate database, and reaches GBrain only
+  # through a least-privilege reader provisioned by setup.sh --gbrain-metabase.
+  metabase:
+    profiles: ["gbrain-viz"]
+    image: ${METABASE_IMAGE:-metabase/metabase:v0.58.34@sha256:abd7e4d9162e4dff67d5958d29e55b1e79de8029c51fddfdc12d9903ad126873}
+    depends_on:
+      gbrain-postgres:
+        condition: service_healthy
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_HOST: gbrain-postgres
+      MB_DB_PORT: "5432"
+      MB_DB_DBNAME: metabase
+      MB_DB_USER: gbrain_metabase_app
+      MB_DB_PASS_FILE: /run/metabase-secrets/app-db-password
+      MB_ENCRYPTION_SECRET_KEY: ${METABASE_ENCRYPTION_SECRET_KEY:-}
+      MB_ANON_TRACKING_ENABLED: "false"
+      MB_CHECK_FOR_UPDATES: "false"
+      JAVA_TIMEZONE: ${TZ:-Etc/UTC}
+    ports:
+      - "${METABASE_BIND_HOST:-127.0.0.1}:${METABASE_HOST_PORT:-3000}:3000"
+    volumes:
+      - type: bind
+        source: ${METABASE_APP_DB_PASSWORD_FILE:-./appdata/gbrain/secrets/metabase-app-db-password.txt}
+        target: /run/metabase-secrets/app-db-password
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      - default
+      - gbrain-db
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   firecrawl-api:
     image: ${FIRECRAWL_IMAGE:-ghcr.io/firecrawl/firecrawl:latest}
@@ -407,3 +511,5 @@ services:
 networks:
   default:
     name: hermes-compose-mcp-rootless
+  gbrain-db:
+    internal: true

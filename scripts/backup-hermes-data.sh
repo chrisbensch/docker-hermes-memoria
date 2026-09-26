@@ -11,7 +11,8 @@ usage() {
 Usage: backup-hermes-data.sh --mode daily|weekly-raw
 
 Creates Restic backups for the rootless Hermes Compose stack. Daily mode stages
-Hermes, logical Hindsight, Headroom, Firecrawl Postgres, and deployment config.
+Hermes, logical Hindsight, GBrain and Metabase Postgres, Headroom, Firecrawl
+Postgres, and deployment config.
 Weekly raw mode additionally creates a brief quiesced raw Hindsight checkpoint.
 EOF
 }
@@ -153,6 +154,19 @@ stage_daily() {
 
   compose exec -T headroom-proxy tar -C /home/nonroot -czf - .headroom > "$staging/headroom-data.tar.gz"
   compose exec -T firecrawl-nuq-postgres sh -lc 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$staging/firecrawl-postgres.sql"
+  if [[ -n $(compose ps -a -q gbrain-postgres) ]]; then
+    "$REPO_ROOT/scripts/backup-gbrain-postgres.sh" \
+      --output "$staging/gbrain-postgres.dump" \
+      --metadata "$staging/gbrain-postgres.dump.json"
+    if compose exec -T gbrain-postgres psql --username=gbrain --dbname=postgres -Atqc \
+      "SELECT 1 FROM pg_database WHERE datname = 'metabase'" | grep -qx 1; then
+      "$REPO_ROOT/scripts/backup-metabase-postgres.sh" \
+        --output "$staging/metabase-postgres.dump" \
+        --metadata "$staging/metabase-postgres.dump.json"
+    fi
+  else
+    printf 'GBrain has not been created; omitting its database from this backup.\n' >&2
+  fi
   python3 "$REPO_ROOT/scripts/backup-hindsight-banks.py" \
     --api-url http://127.0.0.1:8888 \
     --output-dir "$staging" \

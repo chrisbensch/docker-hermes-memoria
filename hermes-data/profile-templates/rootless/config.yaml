@@ -25,6 +25,16 @@ mcp_servers:
     connect_timeout: 10
     timeout: 120
 
+  # Shared GBrain memory. Each profile receives a distinct broker token and
+  # OAuth client; the broker endpoint remains internal to the Compose network.
+  gbrain:
+    url: "http://gbrain-mcp:3132/mcp/__PROFILE__"
+    headers:
+      Authorization: "Bearer ${GBRAIN_MCP_PROXY_TOKEN}"
+    enabled: true
+    connect_timeout: 10
+    timeout: 120
+
   # Optional admin endpoint. Enable temporarily only when you need multi-bank
   # management tools such as list_banks or create_bank.
   # hindsight_admin:

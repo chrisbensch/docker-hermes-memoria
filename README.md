@@ -119,15 +119,30 @@ Use the memory layers for distinct jobs:
 5. Headroom for compression, compressed-content retrieval, and statistics; it
    is not the durable memory store.
 
-## Optional GBrain Retrieval Pilot
+## Optional Shared GBrain
 
-GBrain is an opt-in, derived Markdown retrieval pilot; it is not a replacement
-for the Obsidian vault or Hindsight. The Compose profile is not enabled by the
-base stack, has no published port, has no Hermes MCP configuration, and mounts
-only an explicitly prepared staging corpus. Its PGLite data lives under
-`appdata/gbrain/` and can be rebuilt from that corpus. See
-[the GBrain pilot guide](docs/gbrain-pilot.md) for the required review,
-operator commands, and promotion gates.
+The opt-in `gbrain` profile runs one shared GBrain instance for all Hermes
+profiles. The pinned modern release uses a private Postgres 16 + pgvector
+service, while its HTTP/MCP services remain internal to the application
+network. Each Hermes profile gets a separately attributable OAuth client; the
+server-wide full surface is narrowed by that client's memory-writer/starter
+grant. The HTTP service is loopback-only by default; set an explicit trusted
+LAN bind address when you need the authenticated `/admin` dashboard. It does
+not import data or configure Hermes automatically. See [the
+GBrain Compose integration guide](docs/gbrain-compose.md).
+
+New GBrain deployments are self-hosted-first: `./setup.sh --gbrain` prompts for
+an OpenAI-compatible embedding endpoint, model, and vector dimension. Put the
+provider key in the ignored `.env` value `GBRAIN_EMBEDDING_API_KEY`; setup
+synchronizes it into a private mounted file and verifies a real embedding before
+database initialization. A keyless `--no-embedding` mode provides keyword
+retrieval when no model server is available. Tracked defaults contain neither a
+LAN endpoint nor a key.
+
+For visual monitoring, the separate `gbrain-viz` profile adds Metabase with a
+private application database and aggregate-only GBrain reporting views. It is
+loopback-only in the public template and can be bound to a trusted LAN address.
+See [GBrain Metabase analytics](docs/gbrain-metabase.md).
 
 Profile templates live in `hermes-data/profile-templates/rootless/`. Optional
 role-specific `SOUL.md` overrides belong in
@@ -236,6 +251,11 @@ Use `scripts/validate-hindsight-bank-backup.py` before any bank restore.
 and requires its preflight and pre-restore checkpoint. The
 [backup and recovery runbook](OPERATIONS.md#restic-backups) covers credentials,
 manual jobs, timer logs, isolated restores, and the recovery sequence.
+
+Daily Restic jobs also create a portable custom-format PostgreSQL archive when
+GBrain has been initialized. Validate it with
+`scripts/validate-gbrain-postgres-backup.py`; GBrain restore is dry-run by
+default and always refuses a database that already contains user tables.
 
 Never commit `.env`, `appdata/`, generated SearXNG settings, `.firecrawl-src/`,
 Restic credentials, backup contents, or copied provider secrets.

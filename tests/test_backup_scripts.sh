@@ -8,6 +8,10 @@ grep -Fq 'flock' "$script"
 grep -Fq 'backup-hindsight-banks.py' "$script"
 grep -Fq 'validate-hindsight-bank-backup.py' "$script"
 grep -Fq 'firecrawl-nuq-postgres' "$script"
+grep -Fq 'backup-gbrain-postgres.sh' "$script"
+grep -Fq 'gbrain-postgres.dump' "$script"
+grep -Fq 'backup-metabase-postgres.sh' "$script"
+grep -Fq 'metabase-postgres.dump' "$script"
 grep -Fq 'headroom-proxy' "$script"
 grep -Fq -- '--exclude=./logs' "$script"
 grep -Fq -- '--exclude=./.cache' "$script"
@@ -26,6 +30,10 @@ grep -Fq -- '--keep-weekly 8 --keep-monthly 12' "$script"
 ! grep -Fq 'firecrawl-rabbitmq' "$script"
 
 "$script" --help | grep -Fq 'daily|weekly-raw'
+bash -n scripts/backup-gbrain-postgres.sh scripts/backup-metabase-postgres.sh scripts/restore-gbrain-postgres-backup.sh
+scripts/backup-gbrain-postgres.sh --help | grep -Fq 'custom-format backup'
+scripts/backup-metabase-postgres.sh --help | grep -Fq 'Metabase'
+scripts/restore-gbrain-postgres-backup.sh --help | grep -Fq 'read-only preflight'
 
 grep -Fq 'OnCalendar=*-*-* 07:45:00 Asia/Tokyo' systemd/hermes-backup.timer
 grep -Fq 'OnCalendar=Sat *-*-* 08:00:00 Asia/Tokyo' systemd/hermes-hindsight-raw-backup.timer

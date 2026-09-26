@@ -18,7 +18,7 @@ timestamp() {
 
 usage() {
   cat <<'EOF'
-Usage: ./setup.sh [--check] [-h|--help]
+Usage: ./setup.sh [--check] [--gbrain [--no-embedding]] [--gbrain-metabase] [-h|--help]
 
 Prepare the rootless Hermes Compose stack. With no options, setup writes local
 env files, creates appdata directories, generates per-host SearXNG settings,
@@ -27,6 +27,11 @@ the Compose config.
 
 Options:
   --check      Report whether the repo is ready to run Compose without changing files.
+  --gbrain     Validate and initialize the optional shared GBrain services.
+  --gbrain-metabase
+               Initialize the optional read-only Metabase analytics service.
+  --no-embedding
+               With --gbrain, use keyless keyword-only retrieval.
   -h, --help   Show this help.
 EOF
 }
@@ -564,9 +569,15 @@ default_lm_base_url() {
 }
 
 check_only=no
+gbrain_setup=no
+gbrain_no_embedding=no
+gbrain_metabase_setup=no
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --check) check_only=yes ;;
+    --gbrain) gbrain_setup=yes ;;
+    --gbrain-metabase) gbrain_metabase_setup=yes ;;
+    --no-embedding) gbrain_no_embedding=yes ;;
     -h|--help)
       usage
       exit 0
@@ -579,6 +590,28 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
+
+if [ "$gbrain_no_embedding" = yes ] && [ "$gbrain_setup" != yes ]; then
+  printf '%s\n' '--no-embedding requires --gbrain' >&2
+  exit 2
+fi
+if [ "$gbrain_metabase_setup" = yes ]; then
+  if [ "$check_only" = yes ] || [ "$gbrain_setup" = yes ] || [ "$gbrain_no_embedding" = yes ]; then
+    printf '%s\n' '--gbrain-metabase must be run separately from --check and --gbrain' >&2
+    exit 2
+  fi
+  exec "$script_dir/scripts/configure-gbrain-metabase.sh"
+fi
+if [ "$gbrain_setup" = yes ]; then
+  if [ "$check_only" = yes ]; then
+    printf '%s\n' '--check and --gbrain cannot be combined' >&2
+    exit 2
+  fi
+  if [ "$gbrain_no_embedding" = yes ]; then
+    exec "$script_dir/scripts/configure-gbrain.sh" --no-embedding
+  fi
+  exec "$script_dir/scripts/configure-gbrain.sh"
+fi
 
 if [ "$check_only" = yes ]; then
   preflight_check
@@ -629,6 +662,12 @@ set_env_var "$env_file" HERMES_HOME_MODE "$(env_default "$env_file" HERMES_HOME_
 set_env_var "$env_file" DOCKER_SOCK "$docker_socket"
 appdata_dir=$(env_default "$env_file" APPDATA_DIR ./appdata)
 set_env_var "$env_file" APPDATA_DIR "$appdata_dir"
+# Keep the GBrain embedding settings available from the normal setup path as
+# well as `--gbrain`. The key is intentionally blank for new installations and
+# remains in the ignored .env; `configure-gbrain.sh` syncs it into the mounted
+# 0600 file when GBrain is initialized.
+set_env_var "$env_file" GBRAIN_EMBEDDING_API_KEY "$(get_env_value "$env_file" GBRAIN_EMBEDDING_API_KEY || true)"
+set_env_var "$env_file" GBRAIN_EMBEDDING_API_KEY_FILE "$(env_default "$env_file" GBRAIN_EMBEDDING_API_KEY_FILE ./appdata/gbrain/secrets/embedding-api-key.txt)"
 case "$appdata_dir" in
   /*) appdata_host_dir=$appdata_dir ;;
   *) appdata_host_dir="$script_dir/$appdata_dir" ;;
