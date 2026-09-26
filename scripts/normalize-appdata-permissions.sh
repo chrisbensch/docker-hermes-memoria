@@ -3,7 +3,6 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 hermes_container=${HERMES_CONTAINER:-hermes-compose-mcp-hermes-1}
-hindsight_container=${HINDSIGHT_CONTAINER:-hermes-compose-mcp-hindsight-mcp-1}
 
 normalize_tree() {
   container=$1
@@ -25,9 +24,7 @@ normalize_tree() {
 }
 
 normalize_tree "$hermes_container" /opt/data
-normalize_tree "$hindsight_container" /home/hindsight/.pg0
-
 "$script_dir/fix-obsidian-vault-permissions.sh"
 
-printf 'Normalized Hermes and Hindsight appdata for host group access.\n'
+printf 'Normalized Hermes appdata for host group access.\n'
 printf 'Database-owned Firecrawl/Postgres, RabbitMQ, and Redis internals were left unchanged.\n'

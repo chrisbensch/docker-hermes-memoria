@@ -1,7 +1,7 @@
 # Hermes Agent Compose Stack
 
 This repository deploys Hermes Agent as a rootless Docker Compose stack. It
-includes isolated Hermes profiles, Hindsight semantic memory, Headroom
+includes isolated Hermes profiles, GBrain semantic memory, Headroom
 compression tools, and Firecrawl, SearXNG, and Camofox for web access. Hermes
 is not installed on the host.
 
@@ -24,18 +24,16 @@ backup, restore, and recovery procedures.
 | Service | Purpose |
 | --- | --- |
 | `hermes` | Hermes gateway and supervised Dashboard in one container. |
-| `hindsight-mcp` | Hindsight API, HTTP MCP endpoints, and control plane. |
 | `headroom-proxy` | Headroom LLM proxy and statistics API. |
 | `headroom-mcp` | Intentionally sleeping container that runs Headroom MCP on demand over stdio. |
 | `firecrawl-api` and dependencies | Firecrawl extraction and search services. |
 | `searxng` and `searxng-core` | Local SearXNG endpoint used by Firecrawl. |
 | `camofox` | Browser service used by Hermes. |
 
-The current tested memory-sidecar baseline is Hindsight `0.9.1` and Headroom
-`0.36.5`, validated with Hermes Agent `0.20.4`. The sidecars use explicit tags
-in `.env.example` and the Compose fallbacks; do not replace them with floating
-`latest` tags. `HERMES_IMAGE` currently remains on `latest`, so after refreshing
-that image, run both profile-aware MCP checks in the
+Headroom `0.36.5` is validated with Hermes Agent `0.20.4`. Stateful services use
+explicit tags in `.env.example` and the Compose fallbacks; do not replace them
+with floating `latest` tags. `HERMES_IMAGE` currently remains on `latest`, so
+after refreshing that image, run the profile-aware MCP checks in the
 [image update procedure](OPERATIONS.md#image-version-updates) before accepting
 the new combination.
 
@@ -45,16 +43,13 @@ The default host bindings are loopback-only:
 | --- | --- |
 | Hermes API (when enabled) | `http://127.0.0.1:8642` |
 | Hermes Dashboard | `http://127.0.0.1:9119` |
-| Hindsight API / MCP | `http://127.0.0.1:8888` |
-| Hindsight UI | `http://127.0.0.1:9999` |
 | Headroom proxy / stats | `http://127.0.0.1:8787` |
 | Firecrawl | `http://127.0.0.1:3002` |
 | SearXNG | `http://127.0.0.1:8889` |
 | Camofox | `http://127.0.0.1:9377` |
 
 Container-to-container configuration must use Compose service names, not host
-ports, container IPs, or generated container names. For example, Hermes uses
-`http://hindsight-mcp:8888`, `http://firecrawl-api:3002`, and
+ports, container IPs, or generated container names. For example, Hermes uses `http://firecrawl-api:3002` and
 `http://camofox:9377`.
 
 Hermes runs one default gateway process for the deployment. With profile
@@ -72,9 +67,9 @@ configuration stay outside Git:
 
 - `.env` is the local Compose configuration, copied from `.env.example`. It
   selects host bindings, images, the rootless Docker socket, and sidecar
-  settings, including Hindsight's LLM configuration.
+  settings.
 - `appdata/` is ignored runtime state. It holds Hermes profiles, SQLite data,
-  the shared Obsidian vault, Hindsight data, Headroom data, and Firecrawl
+  the shared Obsidian vault, Headroom data, and Firecrawl
   PostgreSQL data.
 - `appdata/hermes/.env` holds Hermes provider credentials and runtime variables.
   Keep provider keys here, not in tracked files.
@@ -95,33 +90,26 @@ Create a named profile with:
 ```
 
 Profile names use lowercase letters, numbers, underscores, and hyphens.
-`default` is reserved. Each profile gets its own Hermes state and a dedicated
-Hindsight bank named `hermes-<profile>`.
+`default` is reserved. Each profile gets its own Hermes state. GBrain is the
+shared semantic memory service; see [the GBrain Compose integration
+guide](docs/gbrain-compose.md) to configure its profile-scoped MCP access.
 
 The repository includes `research` as an optional reference profile. It
-demonstrates a role-specific `SOUL.md`, profile overrides, and the memory
-wiring; it is not required by the stack or by other profiles. Create it with
+demonstrates a role-specific `SOUL.md` and profile overrides; it is not required by the stack or by other profiles. Create it with
 `./scripts/create-profile.sh research`, or choose a name that fits your own
 deployment. For the optional `research` example, the resulting memory wiring
 is:
 
 ```text
 Hermes state:    /opt/data/profiles/research/
-Hindsight bank:  hermes-research
-Hindsight MCP:   http://hindsight-mcp:8888/mcp/hermes-research/
 Obsidian notes:  /opt/data/obsidian-memory-vault/Profiles/research/
 ```
-
-The profile creation script creates the bank when the Hindsight API is
-available. The generated profile config pins MCP to that one bank, preventing
-normal profile work from mixing memories. The optional multi-bank admin MCP
-endpoint remains disabled unless it is needed temporarily for bank management.
 
 Use the memory layers for distinct jobs:
 
 1. Hermes built-in memory for hot facts and small operational notes.
 2. Hermes session search for transcript recall.
-3. Hindsight for semantic memory, reflection, and durable knowledge.
+3. GBrain for shared semantic memory and knowledge retrieval.
 4. The shared Obsidian vault for durable notes, indexes, logs, and
    cross-profile material.
 5. Headroom for compression, compressed-content retrieval, and statistics; it
@@ -231,7 +219,7 @@ runtime health.
 `./reset.sh` archives generated state before another setup attempt. Its `--hard`
 option removes local runtime state, so make and verify a backup first.
 
-Dashboard, Hindsight UI, and Headroom proxy ports are local-only by default.
+Dashboard and Headroom proxy ports are local-only by default.
 Before exposing any of them, configure Dashboard basic authentication and use a
 trusted network boundary such as an SSH or Tailscale tunnel. The Headroom port
 is an LLM proxy, not a read-only dashboard.
@@ -246,17 +234,18 @@ Follow the complete [host migration procedure](OPERATIONS.md#host-install-migrat
 never replace `appdata/` without a verified timestamped copy or Restic snapshot.
 
 Backups use Restic credentials stored outside this checkout. The daily job
-creates logical application exports, including a validated Hindsight bank
-export; the weekly raw job briefly stops Hindsight to capture its `.pg0` state.
-Install the user timers with:
+backs up Hermes, GBrain Postgres and its configuration/credentials, Headroom,
+Firecrawl Postgres, and deployment config. GBrain credential archives are
+included inside encrypted Restic snapshots and must be protected like the
+profile `.env` files.
+Install the user timer with:
 
 ```bash
 ./scripts/install-backup-timers.sh
 ```
 
-Use `scripts/validate-hindsight-bank-backup.py` before any bank restore.
-`scripts/restore-hindsight-bank-backup.py --apply` writes to the target service
-and requires its preflight and pre-restore checkpoint. The
+Hindsight backup and restore scripts remain for legacy deployments; the current
+Compose stack does not run or back up a local Hindsight service. The
 [backup and recovery runbook](OPERATIONS.md#restic-backups) covers credentials,
 manual jobs, timer logs, isolated restores, and the recovery sequence.
 

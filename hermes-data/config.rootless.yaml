@@ -4,8 +4,7 @@
 # Compose service names instead of 127.0.0.1. Profile-specific MCP wiring is
 # generated under appdata/hermes/profiles/<name>/ by create-profile.sh.
 
-# Optional Hermes runtime model. Hindsight has separate HINDSIGHT_API_LLM_*
-# settings in the Compose .env file; this block controls Hermes Agent itself.
+# Optional Hermes runtime model; this block controls Hermes Agent itself.
 # model:
 #   provider: lmstudio
 #   default: your-local-model
@@ -13,7 +12,7 @@
 
 # Keep MCP wiring in named profiles. The dashboard may still consult the base
 # profile for model settings, so setup.sh mirrors the selected runtime model
-# here while each named profile owns its Hindsight/Headroom config.
+# here while each named profile owns its GBrain/Headroom config.
 mcp_servers: {}
 
 # Run one default-profile gateway for all named profiles on this host.

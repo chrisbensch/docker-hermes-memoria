@@ -5,6 +5,11 @@ Run commands from the repository root as the same unprivileged account that
 runs rootless Docker. See `QUICKSTART.md` for first-time setup and `README.md`
 for architecture and configuration details.
 
+The deployment no longer runs a local Hindsight service; GBrain is the semantic
+memory service. Older Hindsight-specific procedures later in this file are
+retained only for legacy deployments and do not apply to the current Compose
+stack.
+
 Commands below assume the default host ports and `APPDATA_DIR=./appdata`.
 Read the corresponding values from `.env` before using different bindings or
 paths. Keep `.env`, `appdata/`, `.firecrawl-src/`, generated SearXNG settings,
@@ -30,7 +35,7 @@ In `docker info`, verify that the active daemon is rootless and that its socket
 belongs to the current user. The socket configured in `.env` must match:
 
 ```bash
-grep -E '^(APPDATA_DIR|HERMES_UID|HERMES_GID|DOCKER_SOCK|HINDSIGHT_IMAGE)=' .env
+grep -E '^(APPDATA_DIR|HERMES_UID|HERMES_GID|DOCKER_SOCK)=' .env
 ```
 
 Render the effective configuration before starting or recreating services:
@@ -63,7 +68,6 @@ Inspect all logs or focus on one service:
 
 ```bash
 docker compose --env-file .env logs --tail=200
-docker compose --env-file .env logs --tail=200 hindsight-mcp
 docker compose --env-file .env logs --tail=200 hermes
 docker compose --env-file .env logs -f firecrawl-api
 ```
@@ -71,15 +75,14 @@ docker compose --env-file .env logs -f firecrawl-api
 Test the host-published sidecar endpoints:
 
 ```bash
-curl -fsS http://127.0.0.1:8888/health
 curl -fsS http://127.0.0.1:8787/readyz
 curl -fsS http://127.0.0.1:3002/v0/health/liveness
 curl -fsS "http://127.0.0.1:8889/search?q=health-check&format=json"
 curl -fsS http://127.0.0.1:9377/health
 ```
 
-These correspond to `hindsight-mcp`, `headroom-proxy`, `firecrawl-api`,
-`searxng`, and `camofox` on the Compose network. A running `headroom-mcp`
+These correspond to `headroom-proxy`, `firecrawl-api`, `searxng`, and
+`camofox` on the Compose network. A running `headroom-mcp`
 container is expected to sleep until Hermes starts its stdio MCP command. The
 proxy readiness check above validates the HTTP proxy, not MCP transport.
 
@@ -184,36 +187,32 @@ profile bots pass validation.
 
 ## Image Version Updates
 
-Hindsight and Headroom are explicitly pinned because they persist data or sit
-on Hermes' MCP path. The current tested sidecar baseline is Hindsight `0.9.1`
-and Headroom `0.36.5`, validated with Hermes Agent `0.20.4`. Hermes currently
+Headroom is explicitly pinned because it sits on Hermes' MCP path. The current
+tested sidecar baseline is Headroom `0.36.5`, validated with Hermes Agent
+`0.20.4`. Hermes currently
 uses a floating `latest` image, so treat a Hermes pull as a compatibility change
 even when `.env` itself is unchanged.
 
 Inspect configured and running versions before changing anything:
 
 ```bash
-grep -E '^(HERMES_IMAGE|HINDSIGHT_IMAGE|HEADROOM_IMAGE)=' .env
+grep -E '^(HERMES_IMAGE|HEADROOM_IMAGE)=' .env
 docker compose --env-file .env exec -T hermes hermes --version
 docker compose --env-file .env exec -T headroom-mcp headroom --version
-docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' \
-  "$(docker compose --env-file .env ps -q hindsight-mcp)"
 ```
 
-Use release tags, not `latest`, for Hindsight and Headroom. Update `.env`,
-`.env.example`, and the Compose fallbacks together; when changing Hindsight,
-also update its `setup.sh` fallback. Then render the configuration before
+Use release tags, not `latest`, for Headroom. Update `.env`, `.env.example`,
+and the Compose fallbacks together. Then render the configuration before
 pulling:
 
 ```bash
 docker compose --env-file .env config --quiet
 docker compose --env-file .env config --images
-docker compose --env-file .env pull headroom-proxy headroom-mcp hindsight-mcp
+docker compose --env-file .env pull headroom-proxy headroom-mcp
 ```
 
-Recreate and validate Headroom independently so a failure does not also disturb
-Hindsight. The MCP test must use the active Hermes profile and the canonical
-rootless execution path:
+Recreate and validate Headroom. The MCP test must use the active Hermes profile
+and the canonical rootless execution path:
 
 ```bash
 docker compose --env-file .env up -d --no-deps headroom-proxy headroom-mcp
@@ -225,26 +224,6 @@ docker compose --env-file .env exec -T hermes \
   hermes -p "$profile" mcp test headroom
 ```
 
-Before recreating Hindsight with a different image digest, create and verify a
-daily logical backup using the Restic procedure below. For changes whose release
-notes call out storage or migration risk, also take a weekly raw checkpoint.
-Then recreate only Hindsight and verify both its health and Hermes' HTTP MCP
-contract:
-
-```bash
-./scripts/backup-hermes-data.sh --mode daily
-docker compose --env-file .env up -d --no-deps hindsight-mcp
-curl -fsS http://127.0.0.1:8888/health
-docker compose --env-file .env exec -T hermes \
-  /package/admin/s6/command/s6-setuidgid hermes \
-  hermes -p "$profile" mcp test hindsight
-```
-
-If a compatibility check fails, restore the prior explicit image tag in `.env`
-and recreate only the affected service. Do not roll Hindsight back across an
-incompatible storage migration in place; use the validated logical restore or
-quiesced raw-checkpoint procedure instead. Keep pre-upgrade snapshots until
-health, MCP discovery, memory retrieval, and consolidation are accepted.
 
 ## Headroom Kompress Verification
 
@@ -481,7 +460,6 @@ trusted LAN or private overlay, set only the required values in `.env`:
 
 ```bash
 HERMES_DASHBOARD_BIND_HOST=0.0.0.0
-HINDSIGHT_UI_BIND_HOST=0.0.0.0
 
 # This port is an LLM proxy as well as a statistics interface.
 HEADROOM_PROXY_BIND_HOST=0.0.0.0
@@ -492,17 +470,16 @@ Recreate the affected services and use the server address rather than
 
 ```bash
 docker compose --env-file .env up -d --force-recreate \
-  hermes hindsight-mcp headroom-proxy
+  hermes headroom-proxy
 ```
 
 ```text
 Hermes Dashboard:        http://<server-ip>:9119/login?next=%2F
-Hindsight Control Plane: http://<server-ip>:9999
 Headroom stats:          http://<server-ip>:8787/stats
 Headroom history:        http://<server-ip>:8787/stats-history
 ```
 
-Do not expose Hindsight or Headroom directly to an untrusted network. Prefer an
+Do not expose Headroom directly to an untrusted network. Prefer an
 SSH or Tailscale tunnel when broader bind addresses are unnecessary.
 
 ### Headroom Host Binding And Inbound Token Caveat
@@ -558,11 +535,13 @@ test -f "appdata/hermes/profiles/$active_profile/config.yaml"
 test -f "appdata/hermes/profiles/$active_profile/state.db"
 ```
 
-Each lowercase profile normally uses bank `hermes-<profile>`. Compare the
-profile list with Hindsight's bank inventory:
+Each profile has a distinct GBrain OAuth client and broker token. Test the
+selected profile's MCP connection and inspect the discovered tools:
 
 ```bash
-curl -fsS http://127.0.0.1:8888/v1/default/banks | python3 -m json.tool
+docker compose --env-file .env exec -T hermes \
+  /package/admin/s6/command/s6-setuidgid hermes \
+  /opt/hermes/.venv/bin/hermes -p "$active_profile" mcp test gbrain
 ```
 
 ### Integrated URLs
@@ -586,12 +565,11 @@ SEARXNG_URL=http://searxng:80/search
 OBSIDIAN_VAULT_PATH=/opt/data/obsidian-memory-vault
 ```
 
-Also inspect profile MCP configuration for single-bank Hindsight URLs such as
-`http://hindsight-mcp:8888/mcp/hermes-<profile>/` and the group-reacquiring
-Headroom stdio command:
+Also inspect profile MCP configuration for the GBrain broker and the
+group-reacquiring Headroom stdio command:
 
 ```bash
-grep -R -n -E 'hindsight-mcp:8888|command:.*sg|hostdocker|headroom mcp serve' \
+grep -R -n -E 'gbrain-mcp:3132|command:.*sg|hostdocker|headroom mcp serve' \
   appdata/hermes/profiles/*/config.yaml
 ```
 
@@ -781,10 +759,12 @@ docker compose --env-file .env ps
 ```
 
 Rootless numeric ownership under `appdata/` is expected. Do not recursively
-`chown` database-owned Firecrawl, RabbitMQ, Redis, or Hindsight files from the
-host.
+`chown` database-owned Firecrawl, RabbitMQ, or Redis files from the host.
 
-## Hindsight Logical Backup
+## Legacy Hindsight Logical Backup
+
+These commands apply only to a legacy Hindsight deployment; current daily
+Restic backups include GBrain Postgres.
 
 Export every bank, including document-transfer observations and count data:
 
@@ -823,7 +803,10 @@ python3 -m json.tool \
 Keep the complete backup directory. A successful validation report without its
 referenced ZIP files and JSON payloads is not restorable.
 
-## Guarded Hindsight Restore
+## Legacy Guarded Hindsight Restore
+
+These commands apply only to a legacy Hindsight target and do not use the
+current Compose stack.
 
 Logical restore is intended for a new, empty Hindsight target. It requires API
 version 0.8.4 or newer and supported document-import endpoints. Selected target
@@ -939,14 +922,17 @@ The host-side wrapper stages container-readable exports, then Restic encrypts,
 deduplicates, uploads, and applies retention. Daily logical backups include
 Hermes data and online SQLite exports, the Memory Vault, Headroom, Firecrawl
 Postgres, GBrain Postgres, the Metabase application database when initialized,
-deployment configuration, and validated logical Hindsight data. The GBrain
-archive is included after its Compose container has first been created. If that
-container exists but is stopped, the daily job fails instead of silently
-omitting an initialized database. The Metabase archive preserves dashboards,
+and deployment configuration. An initialized GBrain deployment also includes
+validated PostgreSQL, shared home/configuration, mounted service secrets, and
+per-profile broker credentials. These credential archives are plaintext in the
+owner-only staging directory and encrypted by Restic; protect failed staging
+directories as secrets. If the GBrain database container exists but is stopped,
+the daily job fails instead of silently omitting an initialized database. The
+Metabase archive preserves dashboards,
 questions, users, and settings; it does not duplicate GBrain content.
-Weekly raw backups briefly stop only Hindsight to checkpoint `.pg0`. Redis and
-RabbitMQ queue state, caches, logs, generated images, and generic temporary data
-are intentionally outside the durable scope.
+Redis and RabbitMQ queue state, caches, logs, generated images, and generic
+temporary data are intentionally outside the durable scope. The former weekly
+raw Hindsight checkpoint is retired.
 
 ### Load Configuration
 
@@ -983,7 +969,6 @@ script and carry those settings into the systemd services.
 ```bash
 restic snapshots --tag hermes
 restic snapshots --tag daily
-restic snapshots --tag weekly
 
 restic stats --mode restore-size latest
 restic stats --mode restore-size <snapshot-id>
@@ -1003,23 +988,21 @@ restic check
 
 ### Manual Jobs
 
-Run the same workflows used by the timers:
+Run the daily logical backup used by the timer:
 
 ```bash
 ./scripts/backup-hermes-data.sh --mode daily
-./scripts/backup-hermes-data.sh --mode weekly-raw
 ```
 
-Daily mode is online. Weekly raw mode causes a brief Hindsight interruption and
-starts it again on success or failure. The script uses a nonblocking lock, so a
-second job exits with `Backup already running`. Failed staging directories are
-retained under `~/.local/state/hermes-backup/staging/` for diagnosis; do not
-delete them until the failure is understood and any useful export is preserved.
+The job uses a nonblocking lock, so a second run exits with `Backup already
+running`. Failed staging directories are retained under
+`~/.local/state/hermes-backup/staging/` for diagnosis; inspect them before
+removing them.
 
 ### User Timers And Logs
 
-The supplied timers run the daily logical backup at 07:45 JST and the weekly
-raw checkpoint at 08:00 JST on Saturday. Enable linger once, then install them:
+The supplied timer runs the daily logical backup at 07:45 JST. Enable linger
+once, then install it:
 
 The checked-in service units target the validated checkout at
 `/home/sysadmin/docker-hermes-memoria` and rootless socket
@@ -1035,14 +1018,13 @@ sudo loginctl enable-linger "$USER"
 Inspect scheduling, status, and logs:
 
 ```bash
-systemctl --user list-timers --all | grep -E 'hermes-backup|hermes-hindsight-raw-backup'
-systemctl --user status hermes-backup.timer hermes-hindsight-raw-backup.timer
-systemctl --user status hermes-backup.service hermes-hindsight-raw-backup.service
+systemctl --user list-timers --all | grep hermes-backup
+systemctl --user status hermes-backup.timer hermes-backup.service
 journalctl --user -u hermes-backup.service -n 200 --no-pager
-journalctl --user -u hermes-hindsight-raw-backup.service -n 200 --no-pager
 ```
 
-After changing a checked-in unit, reinstall it with
+The installer disables and removes the obsolete weekly Hindsight timer from
+prior deployments. After changing a checked-in unit, reinstall it with
 `./scripts/install-backup-timers.sh`; editing only `systemd/` does not update
 the copies already loaded under `~/.config/systemd/user/`.
 
@@ -1120,9 +1102,8 @@ it on production ports.
 
 ## Disaster-Recovery Sequence
 
-Prefer a daily logical snapshot for portable recovery. Use a weekly raw
-Hindsight checkpoint only when logical import is unavailable or an exact
-database-level rollback is required.
+Use a daily logical snapshot for portable recovery. Hindsight restore steps in
+legacy payload procedures below do not apply to the current stack.
 
 1. Restore the selected Restic snapshot to an isolated directory and run
    `restic check`.
@@ -1134,10 +1115,10 @@ database-level rollback is required.
 5. Restore each profile's online-exported SQLite `state.db` after its profile
    directory exists.
 6. Restore Headroom and Firecrawl Postgres.
-7. Start dependencies and restore Hindsight through the validated logical
-   import. Use the raw checkpoint only as the whole-state alternative.
-8. Validate profiles, active profile, vault, cron, integrated URLs, banks, and
-   sidecar health before enabling timers or external access.
+7. Restore GBrain Postgres from its validated archive when present, then start
+   the GBrain API and broker.
+8. Validate profiles, GBrain MCP, active profile, vault, cron, integrated URLs,
+   and service health before enabling external access.
 
 ### Applying A Daily Snapshot
 
@@ -1184,7 +1165,6 @@ case $appdata_host in
   /|"$PWD") printf 'Refusing unsafe APPDATA_DIR: %s\n' "$appdata_host" >&2; exit 1 ;;
 esac
 test -d "$appdata_host/hermes"
-test -d "$appdata_host/hindsight"
 appdata_previous="${appdata_host}.before-restore-$stamp"
 test ! -e "$appdata_previous"
 mv "$appdata_host" "$appdata_previous"
@@ -1227,9 +1207,15 @@ fresh target database before this import. If PostgreSQL reports existing-object
 collisions, stop: the target is not empty, and dropping objects in place is not
 an acceptable shortcut.
 
+### Legacy Hindsight Import
+
+The following import procedure applies only to a legacy backup made before the
+Hindsight service was removed. Current snapshots restore GBrain Postgres using
+the GBrain-specific archive and restore guide.
+
 Prepare the empty Hindsight directory with the same container-side ownership
-step used by setup, then start it, validate the logical export, and use the
-dry-run, pilot, and all-bank process documented above:
+step used by legacy setup, then validate the logical export and use the old
+dry-run, pilot, and all-bank process:
 
 ```bash
 mkdir -p "$appdata_host/hindsight"
@@ -1247,7 +1233,7 @@ python3 scripts/restore-hindsight-bank-backup.py \
   --api-url http://127.0.0.1:8888
 ```
 
-### Applying A Raw Hindsight Checkpoint
+### Legacy: Applying A Raw Hindsight Checkpoint
 
 **Destructive whole-state restore:** do not combine this with logical Hindsight
 import. This replaces all current Hindsight banks and requires the checkpoint's
@@ -1284,7 +1270,6 @@ docker run --rm --user 0:0 \
 docker compose --env-file .env run --rm --no-deps -T --entrypoint tar hindsight-mcp \
   -C /home/hindsight -xzf - < "$payload/hindsight-raw.tar.gz"
 docker compose --env-file .env up -d hindsight-mcp
-curl -fsS http://127.0.0.1:8888/health
 curl -fsS http://127.0.0.1:8888/v1/default/banks | python3 -m json.tool
 ```
 

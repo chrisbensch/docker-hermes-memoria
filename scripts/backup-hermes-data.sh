@@ -8,12 +8,11 @@ readonly CONFIG_FILE=${HERMES_BACKUP_RESTIC_ENV:-/home/sysadmin/.config/hermes-b
 
 usage() {
   cat <<'EOF'
-Usage: backup-hermes-data.sh --mode daily|weekly-raw
+Usage: backup-hermes-data.sh --mode daily
 
 Creates Restic backups for the rootless Hermes Compose stack. Daily mode stages
-Hermes, logical Hindsight, GBrain and Metabase Postgres, Headroom, Firecrawl
-Postgres, and deployment config.
-Weekly raw mode additionally creates a brief quiesced raw Hindsight checkpoint.
+Hermes, GBrain and Metabase Postgres, Headroom, Firecrawl Postgres, and
+deployment config.
 EOF
 }
 
@@ -36,7 +35,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ $mode == daily || $mode == weekly-raw ]] || { usage >&2; exit 2; }
+[[ $mode == daily ]] || { usage >&2; exit 2; }
 
 compose() {
   docker compose --env-file "$REPO_ROOT/.env" "$@"
@@ -66,13 +65,9 @@ timestamp=$(date -u +%Y%m%d-%H%M%SZ)
 staging="$STATE_ROOT/staging/$mode-$timestamp"
 mkdir -m 700 "$staging"
 success=no
-raw_stopped=no
 
 finish() {
   status=$?
-  if [[ $raw_stopped == yes ]]; then
-    compose start hindsight-mcp >/dev/null || true
-  fi
   if [[ $status -eq 0 && $success == yes ]]; then
     rm -rf "$staging"
   else
@@ -158,6 +153,13 @@ stage_daily() {
     "$REPO_ROOT/scripts/backup-gbrain-postgres.sh" \
       --output "$staging/gbrain-postgres.dump" \
       --metadata "$staging/gbrain-postgres.dump.json"
+    compose exec -T gbrain tar --exclude=./.gbrain/run \
+      -C /var/lib/gbrain/home -czf - . \
+      > "$staging/gbrain-home.tar.gz"
+    compose exec -T gbrain tar -C /run/gbrain-secrets -czf - . \
+      > "$staging/gbrain-secrets.tar.gz"
+    compose exec -T gbrain-mcp tar -C /run/gbrain-oauth/profiles -czf - . \
+      > "$staging/gbrain-profile-credentials.tar.gz"
     if compose exec -T gbrain-postgres psql --username=gbrain --dbname=postgres -Atqc \
       "SELECT 1 FROM pg_database WHERE datname = 'metabase'" | grep -qx 1; then
       "$REPO_ROOT/scripts/backup-metabase-postgres.sh" \
@@ -167,41 +169,14 @@ stage_daily() {
   else
     printf 'GBrain has not been created; omitting its database from this backup.\n' >&2
   fi
-  python3 "$REPO_ROOT/scripts/backup-hindsight-banks.py" \
-    --api-url http://127.0.0.1:8888 \
-    --output-dir "$staging" \
-    --backup-name hindsight-logical \
-    --report "$staging/hindsight-export-report.json"
-  python3 "$REPO_ROOT/scripts/validate-hindsight-bank-backup.py" \
-    --backup-dir "$staging/hindsight-logical" \
-    --report "$staging/hindsight-validation.json"
-}
-
-stage_raw_hindsight() {
-  compose stop hindsight-mcp
-  raw_stopped=yes
-  compose run --rm --no-deps --entrypoint tar hindsight-mcp \
-    -C /home/hindsight -czf - .pg0 > "$staging/hindsight-raw.tar.gz"
-  compose start hindsight-mcp
-  raw_stopped=no
 }
 
 stage_metadata
-if [[ $mode == daily ]]; then
-  stage_daily
-  tags=(--tag hermes --tag daily --tag logical)
-else
-  stage_raw_hindsight
-  tags=(--tag hermes --tag weekly --tag raw)
-fi
+stage_daily
+tags=(--tag hermes --tag daily --tag logical)
 
 restic backup "${tags[@]}" "$staging"
-if [[ $mode == daily ]]; then
-  restic forget --prune --tag daily --group-by host,tags \
-    --keep-daily 14 --keep-weekly 8 --keep-monthly 12
-else
-  restic forget --prune --tag weekly --group-by host,tags \
-    --keep-weekly 8 --keep-monthly 12
-fi
+restic forget --prune --tag daily --group-by host,tags \
+  --keep-daily 14 --keep-weekly 8 --keep-monthly 12
 restic snapshots --tag hermes --latest 1
 success=yes

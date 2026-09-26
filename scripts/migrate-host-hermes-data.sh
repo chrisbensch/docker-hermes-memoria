@@ -279,12 +279,11 @@ create_profile_shell() {
   fi
   say "Creating rootless profile shell: $profile"
   if [ "$dry_run" = 1 ]; then
-    printf '[dry-run] HERMES_DATA_DIR=%s HERMES_APPDATA_DIR=%s HERMES_CREATE_HINDSIGHT_BANK=0 HERMES_PROFILE_ACTIVATE=0 ./scripts/create-profile.sh %s\n' "$data_dir" "$appdata_host_dir" "$profile"
+    printf '[dry-run] HERMES_DATA_DIR=%s HERMES_APPDATA_DIR=%s HERMES_PROFILE_ACTIVATE=0 ./scripts/create-profile.sh %s\n' "$data_dir" "$appdata_host_dir" "$profile"
   else
     HERMES_DATA_DIR="$data_dir" \
       HERMES_APPDATA_DIR="$appdata_host_dir" \
       HERMES_OBSIDIAN_VAULT_DIR="$vault_dest" \
-      HERMES_CREATE_HINDSIGHT_BANK=0 \
       HERMES_PROFILE_ACTIVATE=0 \
       "$stack_dir/scripts/create-profile.sh" "$profile"
   fi

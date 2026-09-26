@@ -187,9 +187,8 @@ if [ "$run_down" = yes ]; then
 fi
 
 if [ "$remove_volumes" = yes ]; then
-  printf 'Removing Docker volumes: hermes-hindsight-data hermes-headroom-workspace hermes-firecrawl-redis hermes-firecrawl-rabbitmq hermes-firecrawl-postgres\n'
+  printf 'Removing Docker volumes: hermes-headroom-workspace hermes-firecrawl-redis hermes-firecrawl-rabbitmq hermes-firecrawl-postgres\n'
   docker volume rm \
-    hermes-hindsight-data \
     hermes-headroom-workspace \
     hermes-firecrawl-redis \
     hermes-firecrawl-rabbitmq \

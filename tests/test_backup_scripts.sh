@@ -5,11 +5,13 @@ script=scripts/backup-hermes-data.sh
 
 bash -n "$script"
 grep -Fq 'flock' "$script"
-grep -Fq 'backup-hindsight-banks.py' "$script"
-grep -Fq 'validate-hindsight-bank-backup.py' "$script"
 grep -Fq 'firecrawl-nuq-postgres' "$script"
 grep -Fq 'backup-gbrain-postgres.sh' "$script"
 grep -Fq 'gbrain-postgres.dump' "$script"
+grep -Fq 'gbrain-home.tar.gz' "$script"
+grep -Fq 'gbrain-secrets.tar.gz' "$script"
+grep -Fq 'gbrain-profile-credentials.tar.gz' "$script"
+grep -Fq -- '--exclude=./.gbrain/run' "$script"
 grep -Fq 'backup-metabase-postgres.sh' "$script"
 grep -Fq 'metabase-postgres.dump' "$script"
 grep -Fq 'headroom-proxy' "$script"
@@ -22,29 +24,25 @@ grep -Fq -- "--exclude='./profiles/*/state.db*'" "$script"
 grep -Fq 'export-sqlite-database.py' "$script"
 grep -Fq 'source.backup(target' scripts/export-sqlite-database.py
 grep -Fq -- '--tag daily --group-by host,tags' "$script"
-grep -Fq -- '--tag weekly --group-by host,tags' "$script"
 grep -Fq -- '--keep-daily 14 --keep-weekly 8 --keep-monthly 12' "$script"
-grep -Fq -- '--keep-weekly 8 --keep-monthly 12' "$script"
 ! grep -Fq 'restic backup appdata' "$script"
 ! grep -Fq 'firecrawl-redis' "$script"
 ! grep -Fq 'firecrawl-rabbitmq' "$script"
 
-"$script" --help | grep -Fq 'daily|weekly-raw'
+"$script" --help | grep -Fq 'Usage: backup-hermes-data.sh --mode daily'
 bash -n scripts/backup-gbrain-postgres.sh scripts/backup-metabase-postgres.sh scripts/restore-gbrain-postgres-backup.sh
 scripts/backup-gbrain-postgres.sh --help | grep -Fq 'custom-format backup'
 scripts/backup-metabase-postgres.sh --help | grep -Fq 'Metabase'
 scripts/restore-gbrain-postgres-backup.sh --help | grep -Fq 'read-only preflight'
 
 grep -Fq 'OnCalendar=*-*-* 07:45:00 Asia/Tokyo' systemd/hermes-backup.timer
-grep -Fq 'OnCalendar=Sat *-*-* 08:00:00 Asia/Tokyo' systemd/hermes-hindsight-raw-backup.timer
 grep -Fq 'Persistent=true' systemd/hermes-backup.timer
-grep -Fq 'Persistent=true' systemd/hermes-hindsight-raw-backup.timer
+grep -Fq 'disable --now "$legacy_unit.timer"' scripts/install-backup-timers.sh
 grep -Fq 'Linger=yes' scripts/install-backup-timers.sh
 grep -Fq 'scripts/install-backup-timers.sh' README.md
 grep -Fq '[backup and recovery runbook](OPERATIONS.md#restic-backups)' README.md
 grep -Fq 'restic check' OPERATIONS.md
 grep -Fq '07:45 JST' OPERATIONS.md
-grep -Fq 'raw checkpoint at 08:00 JST on Saturday' OPERATIONS.md
 
 vault_script=scripts/fix-obsidian-vault-permissions.sh
 bash -n "$vault_script"

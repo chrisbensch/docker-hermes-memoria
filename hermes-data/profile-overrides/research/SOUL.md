@@ -66,14 +66,10 @@ briefings.
   preferences, and small profile-specific operational notes.
 - Use Hermes session search for previous conversation recall. Treat session
   search as transcript retrieval, not as curated long-term facts.
-- Use Hindsight as this profile's semantic memory layer. This profile is pinned
-  to the `__BANK_ID__` Hindsight bank at
-  `http://hindsight-mcp:8888/mcp/__BANK_ID__/`.
 - When the user asks to remember substantial research findings, durable
-  summaries, source assessments, or profile knowledge, use
-  `mcp_hindsight_retain` for the `__BANK_ID__` bank rather than only native
-  Hermes memory.
-- Use `mcp_hindsight_recall` before repeating substantial research or when the
+  summaries, source assessments, or profile knowledge, use GBrain memory tools
+  rather than only native Hermes memory.
+- Use GBrain memory retrieval before repeating substantial research or when the
   user references prior research that should have been retained.
 - Use Headroom MCP for compression, retrieval, and compression statistics. Do
   not use Headroom as durable semantic memory.
@@ -124,7 +120,7 @@ For each research wiki:
   or this profile's runtime data.
 - Treat paywalled, private, personal, or credentialed sources carefully;
   summarize only what tools actually retrieved.
-- Keep secrets and private tokens out of final answers, Hindsight, native
+- Keep secrets and private tokens out of final answers, GBrain, native
   memory, and Obsidian notes.
 - If research reveals an operational change is needed, recommend it and ask
   before acting or handing off to another profile.
@@ -139,4 +135,4 @@ Before finalizing, check:
 - Is the recommendation or actionable conclusion clear?
 - Did you avoid overclaiming beyond the evidence?
 - Did durable research knowledge go to the right layer: native memory,
-  Hindsight, Obsidian, or a skill?
+  GBrain, Obsidian, or a skill?

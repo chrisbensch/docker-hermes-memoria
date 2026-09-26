@@ -25,6 +25,21 @@ the database:
 ./setup.sh --gbrain
 ```
 
+For an existing stack migrated from local Hindsight, review the profile changes
+first, then make timestamped copies and remove the retired MCP entries:
+
+```bash
+docker compose --env-file .env exec -T hermes python3 - \
+  < scripts/remove-hindsight-profile-config.py
+docker compose --env-file .env exec -T hermes python3 - --apply \
+  < scripts/remove-hindsight-profile-config.py
+```
+
+The backup copies are stored under `appdata/hermes/migration-backups/`. The
+migration preserves GBrain and other MCP entries. See
+[the GBrain guide](docs/gbrain-compose.md#per-profile-access) to provision
+GBrain credentials for new profiles.
+
 Use `./setup.sh --gbrain --no-embedding` for keyless keyword-only retrieval.
 No LAN endpoint or provider credential is committed; see
 [the GBrain guide](docs/gbrain-compose.md) for the secret-file layout.
@@ -69,11 +84,9 @@ reaches the compressor. Use the eligible tool-result probe in
 [OPERATIONS.md](OPERATIONS.md#headroom-kompress-verification) before replacing
 the image or adding PyTorch.
 
-New deployments use the explicitly pinned Hindsight and Headroom versions from
-`.env.example`. Keep those tags when copying the file; do not change them to
-`latest`. For a controlled upgrade, back up Hindsight first and follow the
-[image version update procedure](OPERATIONS.md#image-version-updates), including
-both Hermes MCP compatibility checks.
+New deployments use the explicitly pinned sidecar versions from `.env.example`.
+Keep those tags when copying the file; do not change them to `latest`. For a
+controlled upgrade, follow the [image version update procedure](OPERATIONS.md#image-version-updates).
 
 ## Rootless Docker Workflow
 
@@ -87,7 +100,7 @@ sed -i "s/^HERMES_UID=.*/HERMES_UID=$(id -u)/" .env
 sed -i "s/^HERMES_GID=.*/HERMES_GID=$(id -g)/" .env
 sed -i "s|^DOCKER_SOCK=.*|DOCKER_SOCK=/run/user/$(id -u)/docker.sock|" .env
 test -S "/run/user/$(id -u)/docker.sock"
-mkdir -p appdata/hermes/obsidian-memory-vault appdata/hindsight appdata/headroom appdata/firecrawl-redis appdata/firecrawl-rabbitmq appdata/firecrawl-postgres
+mkdir -p appdata/hermes/obsidian-memory-vault appdata/headroom appdata/firecrawl-redis appdata/firecrawl-rabbitmq appdata/firecrawl-postgres
 cp hermes-data/.env.example appdata/hermes/.env
 cp -n hermes-data/config.rootless.yaml appdata/hermes/config.yaml
 cp -n hermes-data/AGENTS.md appdata/hermes/AGENTS.md
@@ -97,8 +110,8 @@ sed -i "s/CHANGE-ME-TO-A-RANDOM-SECRET/$secret/" web-search/searxng-settings.yml
 git clone --depth 1 https://github.com/firecrawl/firecrawl.git .firecrawl-src
 ```
 
-Set `HINDSIGHT_API_LLM_*` in `.env` for Hindsight. Add Hermes runtime provider
-keys, such as `DEEPSEEK_API_KEY`, to `appdata/hermes/.env` if needed.
+Add Hermes runtime provider keys, such as `DEEPSEEK_API_KEY`, to
+`appdata/hermes/.env` if needed.
 For rootless web access, also set `FIRECRAWL_API_URL=http://firecrawl-api:3002`
 and `CAMOFOX_URL=http://camofox:9377` in `appdata/hermes/.env`. Also set
 `OBSIDIAN_VAULT_PATH=/opt/data/obsidian-memory-vault`. `./setup.sh` does this
@@ -117,17 +130,14 @@ chmod +x scripts/create-profile.sh scripts/create-profile-rootless.sh
 ./scripts/create-profile.sh research
 ```
 
-If Hindsight is already running, the script also creates the matching bank. If
-not, it prints the curl command to retry after startup.
-
 The stack uses one default Hermes gateway process. If Telegram is enabled for
 multiple profiles, configure a different bot token for each profile; the
 gateway routes each bot to its matching profile. Do not copy one bot token into
 multiple profiles. For an existing deployment with profile gateways, follow
 the backed-up migration in [OPERATIONS.md](OPERATIONS.md#telegram-gateway-migration).
 
-Hindsight and Hermes use separate model settings. To run Hermes Agent itself
-through LM Studio, set `LM_BASE_URL` in `appdata/hermes/.env`, then add a runtime
+To run Hermes Agent through LM Studio, set `LM_BASE_URL` in
+`appdata/hermes/.env`, then add a runtime
 model block to `appdata/hermes/profiles/research/config.yaml`:
 
 ```yaml
@@ -178,24 +188,19 @@ python3 scripts/fix-headroom-mcp-command.py
 See [OPERATIONS.md](OPERATIONS.md#headroom-mcp-stdio-and-socket-access) for
 selected-profile updates and socket diagnostics.
 
-4. Check services and initialize the Hindsight bank if the profile script
-reported that bank creation was skipped:
+4. Check services:
 
 ```bash
-curl -fsS http://127.0.0.1:8888/health
 curl -fsS http://127.0.0.1:8787/readyz
 curl -fsS http://127.0.0.1:3002/v0/health/liveness
 curl -fsS "http://127.0.0.1:8889/search?q=test&format=json"
 curl -fsS http://127.0.0.1:9377/health
-curl -fsS -X PUT "http://127.0.0.1:8888/v1/default/banks/hermes-research" \
-  -H "content-type: application/json" \
-  -d '{}'
 ```
 
 5. Optional: review UI exposure. Services bind to loopback by default. New
 installs enable the bundled `basic` dashboard-auth plugin, but it remains
 inactive until credentials are configured. Before binding a UI to a trusted
-LAN, configure dashboard authentication and review the Hindsight and Headroom
+LAN, configure dashboard authentication and review the Headroom
 exposure warnings in [OPERATIONS.md](OPERATIONS.md).
 
 ## Next Steps
@@ -204,11 +209,11 @@ exposure warnings in [OPERATIONS.md](OPERATIONS.md).
   apply, cron, Memory Vault, and profile checks in [OPERATIONS.md](OPERATIONS.md).
 - Configuring or resetting dashboard authentication: use the dashboard auth and
   direct login verification procedure in [OPERATIONS.md](OPERATIONS.md).
-- Enabling daily logical and weekly raw Restic backups: configure the external
-  Restic environment, then install and inspect the user timers as documented in
+- Enabling daily logical Restic backups: configure the external
+  Restic environment, then install and inspect the user timer as documented in
   [OPERATIONS.md](OPERATIONS.md).
 - Proving recovery: restore a snapshot into an isolated directory and run the
-  Hindsight validation and pilot-bank workflow in [OPERATIONS.md](OPERATIONS.md).
+  GBrain validation workflow in [OPERATIONS.md](OPERATIONS.md).
 
 For architecture, provider examples, ports, and profile wiring, see
 [README.md](README.md). Contributor and automation-agent conventions are in

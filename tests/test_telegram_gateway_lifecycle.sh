@@ -15,7 +15,6 @@ printf 'legacy profile state\n' > "$data_dir/profiles/legacy/gateway_state.json"
 HERMES_DATA_DIR="$data_dir" \
 HERMES_APPDATA_DIR="$tmp_dir" \
 HERMES_OBSIDIAN_VAULT_DIR="$vault_dir" \
-HERMES_CREATE_HINDSIGHT_BANK=0 \
 HERMES_PROFILE_ACTIVATE=1 \
   "$repo_dir/scripts/create-profile.sh" telegram-check >/dev/null
 

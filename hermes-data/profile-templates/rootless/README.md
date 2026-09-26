@@ -10,31 +10,15 @@ another profile's bot token.
 ## Memory Wiring
 
 - Hermes built-in memory stays profile-local in this directory.
-- Hindsight bank ID: `__BANK_ID__`
-- Hindsight MCP URL: `http://hindsight-mcp:8888/mcp/__BANK_ID__/`
+- GBrain provides shared semantic memory through its profile-scoped MCP broker.
 - Headroom MCP is configured in `config.yaml` as a Docker-backed stdio server
   that reacquires the rootless socket group with `sg hostdocker`.
 - Shared Obsidian vault inside Hermes: `__OBSIDIAN_VAULT_PATH__`
 - This profile's Obsidian index: `__OBSIDIAN_VAULT_PATH__/Profiles/__PROFILE__/Index.md`
 
-Use the Hindsight bank for deeper semantic memory. Use Headroom for compression,
-retrieval of compressed content, and compression statistics. Use Obsidian for
-durable notes, indexes, logs, and cross-profile knowledge.
-
-## Hindsight Bank
-
-The profile config pins Hindsight to `__BANK_ID__` by URL. The profile creation
-script creates this bank automatically when the Hindsight API is reachable. To
-retry manually from the Ubuntu host, call the loopback-published API:
-
-```bash
-curl -fsS -X PUT "http://127.0.0.1:8888/v1/default/banks/__BANK_ID__" \
-  -H "content-type: application/json" \
-  -d '{}'
-```
-
-Inside the Compose network, Hermes talks to Hindsight through the
-`hindsight-mcp` service name.
+Use GBrain for shared semantic memory and retrieval. Use Headroom for
+compression, retrieval of compressed content, and compression statistics. Use
+Obsidian for durable notes, indexes, logs, and cross-profile knowledge.
 
 ## Obsidian Vault
 

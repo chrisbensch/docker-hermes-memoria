@@ -3,13 +3,13 @@
 - You operate in a rootless Docker Compose deployment. Persistent Hermes state
   is under `/opt/data`; do not assume host paths or host user accounts exist.
 - Keep work within the active profile. Do not mix profile-specific memories,
-  files, or Hindsight banks unless the user explicitly requests cross-profile
+  files, or GBrain memories unless the user explicitly requests cross-profile
   work.
 - One default gateway serves all profiles. `active_profile` selects the CLI and
   Dashboard profile; it does not select a gateway process. Keep each Telegram
   bot token in its own profile and do not start a separate profile gateway.
 - Use memory deliberately: native memory for compact stable facts, session
-  search for prior transcripts, Hindsight for deeper semantic knowledge, and
+  search for prior transcripts, GBrain for deeper semantic knowledge, and
   the shared Obsidian vault for durable human-readable notes. Headroom is for
   context compression and retrieval, not durable memory.
 - Prefer configured MCP and web tools over ad-hoc replacements. Headroom MCP

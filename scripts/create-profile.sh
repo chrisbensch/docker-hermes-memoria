@@ -2,10 +2,8 @@
 set -eu
 
 usage() {
-  printf 'Usage: %s <profile-name> [hindsight-bank-id]\n' "$0" >&2
+  printf 'Usage: %s <profile-name>\n' "$0" >&2
   printf 'Example: %s research hermes-research\n' "$0" >&2
-  printf 'Default Hindsight bank ID: hermes-<profile-name>\n' >&2
-  printf 'Set HERMES_CREATE_HINDSIGHT_BANK=0 to skip bank creation.\n' >&2
 }
 
 if [ "${1:-}" = "" ]; then
@@ -14,7 +12,6 @@ if [ "${1:-}" = "" ]; then
 fi
 
 profile_name=$1
-bank_id=${2:-hermes-$profile_name}
 
 case "$profile_name" in
   *[!a-z0-9_-]*)
@@ -32,13 +29,6 @@ case "$profile_name" in
     ;;
 esac
 
-case "$bank_id" in
-  *[!A-Za-z0-9_-]*)
-    printf 'Invalid Hindsight bank ID: %s\n' "$bank_id" >&2
-    printf 'Use only letters, numbers, underscore, and hyphen.\n' >&2
-    exit 2
-    ;;
-esac
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 stack_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
@@ -63,10 +53,6 @@ case "$obsidian_vault_dir" in
   *) obsidian_vault_dir="$stack_dir/$obsidian_vault_dir" ;;
 esac
 container_obsidian_vault_dir=${HERMES_CONTAINER_OBSIDIAN_VAULT_DIR:-/opt/data/obsidian-memory-vault}
-hindsight_mcp_base=${HERMES_HINDSIGHT_MCP_BASE:-http://hindsight-mcp:8888/mcp}
-hindsight_api_base=${HERMES_HINDSIGHT_API_BASE:-http://127.0.0.1:8888}
-init_hindsight_bank=${HERMES_CREATE_HINDSIGHT_BANK:-1}
-require_hindsight_bank=${HERMES_REQUIRE_HINDSIGHT_BANK:-0}
 headroom_mcp_description=${HERMES_HEADROOM_MCP_DESCRIPTION:-docker-backed stdio server joined to hermes-compose-mcp-rootless}
 activate_profile=${HERMES_PROFILE_ACTIVATE:-auto}
 
@@ -83,7 +69,6 @@ fi
 render_template() {
   sed \
     -e "s/__PROFILE__/$profile_name/g" \
-    -e "s/__BANK_ID__/$bank_id/g" \
     -e "s|__APPDATA_DIR__|$appdata_dir|g" \
     -e "s|__OBSIDIAN_VAULT_PATH__|$container_obsidian_vault_dir|g" \
     "$1" > "$2"
@@ -129,7 +114,7 @@ ensure_obsidian_vault() {
     '# Memory Architecture' \
     '' \
     '- Hermes native memory stores compact profile-local facts.' \
-    '- Hindsight stores deeper semantic memory in one bank per profile.' \
+    '- GBrain provides shared semantic memory through profile-scoped access.' \
     '- This Obsidian vault stores durable notes, indexes, logs, and cross-profile knowledge.' \
     '- Headroom manages context compression and stats, not durable semantic memory.'
 
@@ -180,7 +165,7 @@ ensure_obsidian_vault_in_container() {
       "# Memory Architecture" \
       "" \
       "- Hermes native memory stores compact profile-local facts." \
-      "- Hindsight stores deeper semantic memory in one bank per profile." \
+      "- GBrain provides shared semantic memory through profile-scoped access." \
       "- This Obsidian vault stores durable notes, indexes, logs, and cross-profile knowledge." \
       "- Headroom manages context compression and stats, not durable semantic memory."
     write_if_missing "$vault/Templates/Daily Review.md" \
@@ -196,42 +181,12 @@ ensure_obsidian_vault_in_container() {
   ' sh "$container_obsidian_vault_dir" "$profile"
 }
 
-init_hindsight_bank() {
-  bank_url="$hindsight_api_base/v1/default/banks/$bank_id"
-  if ! command -v curl >/dev/null 2>&1; then
-    printf 'skipped; curl is not installed'
-    return 0
-  fi
-  if curl -fsS -X PUT "$bank_url" -H "content-type: application/json" -d '{}' >/dev/null 2>&1; then
-    printf 'ready'
-    return 0
-  fi
-  if [ "$require_hindsight_bank" = 1 ] || [ "$require_hindsight_bank" = true ] || [ "$require_hindsight_bank" = yes ]; then
-    printf 'Could not create Hindsight bank at %s\n' "$bank_url" >&2
-    printf 'Start Hindsight or set HERMES_HINDSIGHT_API_BASE to the reachable API URL.\n' >&2
-    exit 1
-  fi
-  printf 'skipped; Hindsight API unavailable at %s' "$hindsight_api_base"
-}
-
 print_summary() {
-  if [ "$init_hindsight_bank" = 0 ] || [ "$init_hindsight_bank" = false ] || [ "$init_hindsight_bank" = no ]; then
-    bank_message="skipped by HERMES_CREATE_HINDSIGHT_BANK=$init_hindsight_bank"
-  else
-    bank_message=$(init_hindsight_bank)
-  fi
-
   printf '\nProfile: %s\n' "$profile_name"
   printf 'Template: %s\n' "$template_name"
   printf 'Active profile: %s\n' "$active_message"
-  printf 'Hindsight bank: %s (%s)\n' "$bank_id" "$bank_message"
-  printf 'Hindsight MCP URL: %s/%s/\n' "$hindsight_mcp_base" "$bank_id"
   printf 'Headroom MCP: %s\n' "$headroom_mcp_description"
   printf 'Obsidian profile index: %s/Profiles/%s/Index.md\n' "$obsidian_vault_dir" "$profile_name"
-  if printf '%s' "$bank_message" | grep -q '^skipped;'; then
-    printf 'Retry bank creation:\n'
-    printf '  curl -fsS -X PUT "%s/v1/default/banks/%s" -H "content-type: application/json" -d '\''{}'\''\n' "$hindsight_api_base" "$bank_id"
-  fi
 }
 
 activate_profile() {

@@ -2,7 +2,7 @@
 
 ## Purpose And Layout
 
-This repository packages Hermes Agent and its Hindsight, Headroom, Firecrawl,
+This repository packages Hermes Agent and its GBrain, Headroom, Firecrawl,
 SearXNG, and Camofox dependencies as a rootless Docker Compose stack.
 
 - `docker-compose.yml` defines the stack; use `.env` for local Compose values.
@@ -14,8 +14,7 @@ SearXNG, and Camofox dependencies as a rootless Docker Compose stack.
   `scripts/fix-obsidian-vault-permissions.sh` as the canonical shared-vault
   ownership operation. Use `scripts/fix-headroom-mcp-command.py` to migrate
   existing profile configs to the rootless Headroom stdio command.
-- `systemd/` contains user services and timers for daily logical backups and
-  weekly raw Hindsight checkpoints.
+- `systemd/` contains the user service and timer for daily logical backups.
 - `tests/` contains Bash integration/static checks and Python `unittest` tests.
 - `QUICKSTART.md` is the install path, `README.md` is the architecture reference,
   and `OPERATIONS.md` is the day-two runbook.
@@ -23,7 +22,7 @@ SearXNG, and Camofox dependencies as a rootless Docker Compose stack.
   rewrite historical records while making unrelated changes.
 
 Ignored `appdata/` is writable runtime state, not a source tree. It includes
-Hermes profiles, SQLite databases, the Obsidian Memory Vault, Hindsight state,
+Hermes profiles, SQLite databases, the Obsidian Memory Vault,
 and other service data. Keep secrets in ignored `.env` files or external secret
 stores; commit only examples and templates.
 
@@ -79,7 +78,7 @@ proxy and statistics APIs; it is not the MCP transport.
 - Python utilities use the standard library, type hints where useful, and
   `unittest`. Keep network and filesystem operations injectable or testable.
 - Profile names are lowercase letters, numbers, underscores, and hyphens;
-  `default` is reserved. Hindsight bank IDs normally use `hermes-<profile>`.
+  `default` is reserved.
 
 ## Migration, Backup, And Restore Safety
 
@@ -106,9 +105,8 @@ proxy and statistics APIs; it is not the MCP transport.
   `validate-hindsight-bank-backup.py` before any restore. Treat
   `restore-hindsight-bank-backup.py --apply` as a write operation and confirm
   its target-bank preconditions and pre-restore checkpoint.
-- `backup-hermes-data.sh --mode daily` creates logical application exports;
-  `--mode weekly-raw` briefly stops Hindsight for a raw checkpoint. Failed
-  staging directories are retained intentionally for diagnosis; inspect them
+- `backup-hermes-data.sh --mode daily` creates logical application exports.
+  Failed staging directories are retained intentionally for diagnosis; inspect them
   before removing them.
 - Redis and RabbitMQ queue state for Firecrawl is intentionally excluded from
   durable backups. Firecrawl PostgreSQL data is the durable component.

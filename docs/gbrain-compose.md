@@ -1,8 +1,10 @@
 # Shared GBrain Compose Integration
 
 The opt-in `gbrain` Compose profile runs one shared GBrain instance for every
-Hermes profile. It is a migration target: starting it does not import a
-Hindsight export, change Hermes configuration, or disable Hindsight.
+Hermes profile. GBrain is the stack's shared semantic memory service. The
+current Compose stack no longer runs local Hindsight; existing profile configs
+can be migrated with `scripts/remove-hindsight-profile-config.py` before
+recreating Hermes.
 
 The source is pinned to GBrain commit
 `31f257a0a7b218b40e03d302bc6913c99f26f0ec` (release `v0.54.1.1`). Change the
@@ -260,16 +262,58 @@ docker compose --env-file .env --profile gbrain up -d --build gbrain-mcp
 docker compose --env-file .env --profile gbrain ps gbrain-postgres gbrain gbrain-mcp
 ```
 
-Keep Hindsight enabled during comparison and rollback testing.
-Registering clients and changing Hermes profile files are separate write
-operations and are not performed by starting this Compose profile.
+Verify an authenticated profile connection through Hermes. The test performs
+MCP initialization and tool discovery without printing its bearer token:
+
+```bash
+profile=maestro
+docker compose --env-file .env exec -T hermes \
+  /package/admin/s6/command/s6-setuidgid hermes \
+  /opt/hermes/.venv/bin/hermes -p "$profile" mcp test gbrain
+```
+
+Require `Connected` and a nonzero tool count. Repeat for every profile that
+should use shared memory. A GBrain HTTP health check alone does not validate
+the profile token or its OAuth grant.
+
+GBrain client registration and Hermes profile credential files are provisioned
+separately from starting this Compose profile. The current profile template
+includes GBrain MCP; every enabled Hermes profile needs its own provisioned
+credential before it can use the broker.
 
 ## Backup and rollback
 
-The authoritative memory is now Postgres, not `appdata/gbrain/shared`. Before a
-production cutover, add a logical `pg_dump` of `gbrain-postgres` to the normal
-verified backup workflow; a live filesystem copy of its data directory is not
-a logical backup.
+The authoritative memory is in Postgres, not `appdata/gbrain/shared`. The daily
+Restic job creates a validated logical `pg_dump` and also includes the shared
+GBrain home, mounted service secrets, and per-profile broker credentials. The
+credential archives are plaintext in the owner-only staging directory and
+encrypted by Restic; protect failed staging directories as secrets. A live
+filesystem copy of the Postgres data directory is not a logical backup.
+
+For an isolated recovery, restore `gbrain-home.tar.gz` to
+`appdata/gbrain/shared`, `gbrain-profile-credentials.tar.gz` to
+`appdata/gbrain/secrets/profiles`, and the Hermes archive to its normal
+`appdata/hermes` target. Extract `gbrain-secrets.tar.gz` into a private
+temporary directory, then install its `postgres-password`, `admin-token`,
+`embedding-api-key`, and `litellm-api-key` files at the paths configured in
+`.env` (the standard paths use matching names with `.txt`). Use mode `0600`
+for files and `0700` for secret directories, then remove the temporary
+extraction directory. These credentials must match the archived Postgres data
+and existing OAuth clients.
+
+Start only the empty Postgres service, restore the validated database archive,
+then start GBrain and its broker:
+
+```bash
+docker compose --env-file .env --profile gbrain up -d gbrain-postgres
+./scripts/restore-gbrain-postgres-backup.sh \
+  --backup /path/to/gbrain-postgres.dump \
+  --metadata /path/to/gbrain-postgres.dump.json --apply
+docker compose --env-file .env --profile gbrain up -d gbrain gbrain-mcp
+```
+
+Keep the restore isolated until profile MCP tests pass. The restore helper
+refuses to write to a database that already contains user tables.
 
 Stop in dependency order:
 
@@ -281,4 +325,5 @@ docker compose --env-file .env --profile gbrain stop \
 Preserve `appdata/gbrain/postgres`, `appdata/gbrain/shared`, and all credential
 files through the rollback window. Never remove, replace, or recursively change
 ownership of those paths without a verified timestamped copy or Restic
-snapshot. Removing the Compose profile does not migrate data back to Hindsight.
+snapshot. Removing the Compose profile stops GBrain but leaves its data and
+credentials on disk; it does not migrate memories to another store.

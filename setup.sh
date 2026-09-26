@@ -414,12 +414,6 @@ preflight_check() {
     status_need "Hermes AGENTS context will be seeded: $appdata_host_dir/hermes/AGENTS.md"
   fi
 
-  if [ -d "$appdata_host_dir/hindsight" ]; then
-    status_ok "Hindsight appdata exists: $appdata_host_dir/hindsight"
-  else
-    status_need "Hindsight appdata will be created: $appdata_host_dir/hindsight"
-  fi
-
   if [ -f "$settings_file" ]; then
     if grep -q 'CHANGE-ME-TO-A-RANDOM-SECRET' "$settings_file"; then
       status_need "SearXNG settings still contain placeholder secret: $settings_file"
@@ -551,19 +545,6 @@ ensure_firecrawl_source() {
   chmod a+r "$source_dir/apps/nuq-postgres/Dockerfile" "$source_dir/apps/nuq-postgres/nuq.sql" 2>/dev/null || true
 }
 
-prepare_rootless_hindsight_dir() {
-  image=$1
-  dir=$2
-
-  printf 'Preparing rootless Hindsight data ownership at %s...\n' "$dir" >&2
-  docker run --rm \
-    --user 0:0 \
-    -v "$dir:/mnt" \
-    --entrypoint sh \
-    "$image" \
-    -c 'chown 1000:1000 /mnt && rm -f /mnt/.chown-test' >/dev/null
-}
-
 default_lm_base_url() {
   printf 'http://host.docker.internal:1234/v1\n'
 }
@@ -636,8 +617,6 @@ while :; do
   fi
 done
 
-bank_id=$(prompt_default 'Hindsight bank ID' "hermes-$profile_name")
-
 uid_value=$(prompt_default 'Host UID for appdata ownership' "$(id -u)")
 gid_value=$(prompt_default 'Host GID for appdata ownership' "$(id -g)")
 
@@ -679,15 +658,10 @@ obsidian_vault_dir="$data_dir/obsidian-memory-vault"
 mkdir -p \
   "$data_dir" \
   "$obsidian_vault_dir" \
-  "$appdata_host_dir/hindsight" \
   "$appdata_host_dir/headroom" \
   "$appdata_host_dir/firecrawl-redis" \
   "$appdata_host_dir/firecrawl-rabbitmq" \
   "$appdata_host_dir/firecrawl-postgres"
-
-hindsight_image=$(env_default "$env_file" HINDSIGHT_IMAGE ghcr.io/vectorize-io/hindsight:0.9.1)
-set_env_var "$env_file" HINDSIGHT_IMAGE "$hindsight_image"
-prepare_rootless_hindsight_dir "$hindsight_image" "$appdata_host_dir/hindsight"
 
 if [ ! -f "$hermes_env_file" ]; then
   cp "$hermes_env_example" "$hermes_env_file"
@@ -732,36 +706,9 @@ set_env_var "$env_file" CAMOFOX_HOST_PORT "$(env_default "$env_file" CAMOFOX_HOS
 write_searxng_settings "$(env_default "$env_file" SEARXNG_SETTINGS_FILE ./web-search/searxng-settings.yml)"
 ensure_firecrawl_source "$firecrawl_source_dir"
 
-hindsight_provider=$(prompt_default 'Hindsight LLM provider (lmstudio/deepseek/openai)' "$(env_default "$env_file" HINDSIGHT_API_LLM_PROVIDER lmstudio)")
-case "$hindsight_provider" in
-  lmstudio)
-    hindsight_model=$(prompt_default 'Hindsight LM Studio model' "$(env_default "$env_file" HINDSIGHT_API_LLM_MODEL your-local-model)")
-    hindsight_base=$(prompt_default 'Hindsight LM Studio base URL' "$(env_default "$env_file" HINDSIGHT_API_LLM_BASE_URL "$(default_lm_base_url)")")
-    hindsight_key=$(prompt_default 'Hindsight LM Studio API key (blank is ok)' "$(get_env_value "$env_file" HINDSIGHT_API_LLM_API_KEY || true)")
-    ;;
-  deepseek)
-    hindsight_model=$(prompt_default 'Hindsight DeepSeek model' "$(env_default "$env_file" HINDSIGHT_API_LLM_MODEL deepseek-chat)")
-    hindsight_base=$(prompt_default 'Hindsight DeepSeek base URL (blank for provider default)' "$(get_env_value "$env_file" HINDSIGHT_API_LLM_BASE_URL || true)")
-    hindsight_key=$(prompt_secret 'Hindsight DeepSeek API key (blank to leave empty)')
-    ;;
-  openai)
-    hindsight_model=$(prompt_default 'Hindsight OpenAI model' "$(env_default "$env_file" HINDSIGHT_API_LLM_MODEL gpt-4o-mini)")
-    hindsight_base=$(prompt_default 'Hindsight OpenAI base URL (blank for OpenAI)' "$(get_env_value "$env_file" HINDSIGHT_API_LLM_BASE_URL || true)")
-    hindsight_key=$(prompt_secret 'Hindsight OpenAI API key (blank to leave empty)')
-    ;;
-  *)
-    printf 'Unknown Hindsight provider: %s\n' "$hindsight_provider" >&2
-    exit 2
-    ;;
-esac
-
-set_env_var "$env_file" HINDSIGHT_API_LLM_PROVIDER "$hindsight_provider"
-set_env_var "$env_file" HINDSIGHT_API_LLM_MODEL "$hindsight_model"
-set_env_var "$env_file" HINDSIGHT_API_LLM_BASE_URL "$hindsight_base"
-set_env_var "$env_file" HINDSIGHT_API_LLM_API_KEY "$hindsight_key"
-
-if [ "$hindsight_provider" = lmstudio ] && prompt_yes_no 'Point Headroom proxy at the same LM Studio URL' y; then
-  set_env_var "$env_file" OPENAI_TARGET_API_URL "$hindsight_base"
+if prompt_yes_no 'Configure Headroom proxy for an LM Studio endpoint now' n; then
+  headroom_model_base=$(prompt_default 'LM Studio base URL' "$(default_lm_base_url)")
+  set_env_var "$env_file" OPENAI_TARGET_API_URL "$headroom_model_base"
 fi
 
 dashboard_public=no
@@ -769,7 +716,6 @@ dashboard_public=no
 if prompt_yes_no 'Expose browser UIs on the LAN' n; then
   dashboard_public=yes
   set_env_var "$env_file" HERMES_DASHBOARD_BIND_HOST 0.0.0.0
-  set_env_var "$env_file" HINDSIGHT_UI_BIND_HOST 0.0.0.0
   if prompt_yes_no 'Expose Headroom proxy/stats on the LAN too' n; then
     set_env_var "$env_file" HEADROOM_PROXY_BIND_HOST 0.0.0.0
   else
@@ -777,7 +723,6 @@ if prompt_yes_no 'Expose browser UIs on the LAN' n; then
   fi
 else
   set_env_var "$env_file" HERMES_DASHBOARD_BIND_HOST 127.0.0.1
-  set_env_var "$env_file" HINDSIGHT_UI_BIND_HOST 127.0.0.1
   set_env_var "$env_file" HEADROOM_PROXY_BIND_HOST 127.0.0.1
 fi
 
@@ -806,7 +751,7 @@ chmod +x \
   "$script_dir/scripts/create-profile-rootless.sh" \
   "$script_dir/scripts/fix-obsidian-vault-permissions.sh" \
   "$script_dir/scripts/normalize-appdata-permissions.sh"
-HERMES_DATA_DIR="$data_dir" HERMES_APPDATA_DIR="$appdata_host_dir" HERMES_OBSIDIAN_VAULT_DIR="$obsidian_vault_dir" HERMES_PROFILE_ACTIVATE=1 "$profile_script" "$profile_name" "$bank_id"
+HERMES_DATA_DIR="$data_dir" HERMES_APPDATA_DIR="$appdata_host_dir" HERMES_OBSIDIAN_VAULT_DIR="$obsidian_vault_dir" HERMES_PROFILE_ACTIVATE=1 "$profile_script" "$profile_name"
 
 profile_config="$data_dir/profiles/$profile_name/config.yaml"
 backup_file "$profile_config"
@@ -819,7 +764,6 @@ set_env_var "$hermes_env_file" CAMOFOX_URL "$camofox_url"
 
 profile_env_file="$data_dir/profiles/$profile_name/.env"
 backup_file "$profile_env_file"
-set_env_var "$profile_env_file" HINDSIGHT_BANK_ID "$bank_id"
 set_env_var "$profile_env_file" OBSIDIAN_VAULT_PATH /opt/data/obsidian-memory-vault
 set_env_var "$profile_env_file" FIRECRAWL_API_URL "$firecrawl_api_url"
 set_env_var "$profile_env_file" CAMOFOX_URL "$camofox_url"
@@ -827,10 +771,10 @@ set_env_var "$profile_env_file" CAMOFOX_URL "$camofox_url"
 append_web_config "$profile_config"
 
 if prompt_yes_no 'Configure Hermes Agent runtime model now' y; then
-  runtime_provider=$(prompt_default 'Hermes runtime provider (lmstudio/deepseek/openai)' "$hindsight_provider")
+  runtime_provider=$(prompt_default 'Hermes runtime provider (lmstudio/deepseek/openai)' openai)
   case "$runtime_provider" in
     lmstudio)
-      runtime_model=$(prompt_default 'Hermes LM Studio model' "$hindsight_model")
+      runtime_model=$(prompt_default 'Hermes LM Studio model' your-local-model)
       runtime_base=$(prompt_default 'Hermes LM Studio base URL' "$(default_lm_base_url)")
       runtime_key=$(prompt_default 'Hermes LM Studio API key (blank is ok)' "$(get_env_value "$hermes_env_file" LM_API_KEY || true)")
       set_env_var "$hermes_env_file" LM_BASE_URL "$runtime_base"
@@ -874,13 +818,10 @@ compose_cmd='docker compose --env-file .env'
 server_ip=$(ip route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") {print $(i + 1); exit}}' || true)
 [ -n "$server_ip" ] || server_ip='<server-ip>'
 dashboard_bind=$(env_default "$env_file" HERMES_DASHBOARD_BIND_HOST 127.0.0.1)
-hindsight_bind=$(env_default "$env_file" HINDSIGHT_UI_BIND_HOST 127.0.0.1)
 headroom_bind=$(env_default "$env_file" HEADROOM_PROXY_BIND_HOST 127.0.0.1)
 dashboard_host=127.0.0.1
-hindsight_host=127.0.0.1
 headroom_host=127.0.0.1
 [ "$dashboard_bind" = 0.0.0.0 ] && dashboard_host=$server_ip
-[ "$hindsight_bind" = 0.0.0.0 ] && hindsight_host=$server_ip
 [ "$headroom_bind" = 0.0.0.0 ] && headroom_host=$server_ip
 
 post_setup_check
@@ -896,8 +837,6 @@ printf 'Apply it after reviewing the plan (a verified config backup is created f
 printf '  ./scripts/migrate-telegram-gateway.sh --apply\n\n'
 printf 'Normalize rootless appdata permissions after the containers create their state:\n'
 printf '  ./scripts/normalize-appdata-permissions.sh\n\n'
-printf 'Initialize the Hindsight bank after the stack is healthy:\n'
-printf '  curl -fsS -X PUT "http://127.0.0.1:8888/v1/default/banks/%s" -H "content-type: application/json" -d '\''{}'\''\n\n' "$bank_id"
 printf 'Check the integrated web stack after startup:\n'
 printf '  curl -fsS http://127.0.0.1:%s/readyz\n' "$(env_default "$env_file" HEADROOM_PROXY_HOST_PORT 8787)"
 printf '  curl -fsS http://127.0.0.1:%s/stats\n' "$(env_default "$env_file" HEADROOM_PROXY_HOST_PORT 8787)"
@@ -906,6 +845,5 @@ printf '  curl -fsS "http://127.0.0.1:%s/search?q=test&format=json"\n' "$(env_de
 printf '  curl -fsS http://127.0.0.1:%s/health\n\n' "$(env_default "$env_file" CAMOFOX_HOST_PORT 9377)"
 printf 'Useful URLs:\n'
 printf '  Hermes Dashboard:        http://%s:%s/login?next=%%2F\n' "$dashboard_host" "$(env_default "$env_file" HERMES_DASHBOARD_HOST_PORT 9119)"
-printf '  Hindsight Control Plane: http://%s:%s\n' "$hindsight_host" "$(env_default "$env_file" HINDSIGHT_UI_HOST_PORT 9999)"
 printf '  Headroom stats:          http://%s:%s/stats\n' "$headroom_host" "$(env_default "$env_file" HEADROOM_PROXY_HOST_PORT 8787)"
 printf '  Obsidian vault:          %s\n' "$obsidian_vault_dir"
