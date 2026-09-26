@@ -184,7 +184,8 @@ GBRAIN_HTTP_BIND_HOST=192.0.2.10
 GBRAIN_HTTP_HOST_PORT=3131
 ```
 
-Then open `http://192.0.2.10:3131/admin/` and authenticate with the owner
+Replace `192.0.2.10` with the host's trusted LAN address, then open
+`http://<trusted-LAN-IP>:3131/admin/` and authenticate with the owner
 bootstrap token from `appdata/gbrain/secrets/admin-token.txt`. Keep this port on
 a trusted network; the dashboard exposes client and activity administration.
 

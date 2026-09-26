@@ -11,6 +11,8 @@ appdata/
 web-search/searxng-settings.yml
 reset-backups/
 migration-inventory/
+migration-backups/
+host-migration/
 hermes-data/.cache/
 hermes-data/.env
 hermes-data/.env.bak-*
