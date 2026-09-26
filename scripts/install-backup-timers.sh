@@ -15,10 +15,12 @@ rm -f "$UNIT_DIR/$legacy_unit.service" "$UNIT_DIR/$legacy_unit.timer"
 
 for unit in \
   hermes-backup.service \
-  hermes-backup.timer; do
+  hermes-backup.timer \
+  hermes-gbrain-git-backup.service \
+  hermes-gbrain-git-backup.timer; do
   install -D -m 0644 "$REPO_ROOT/systemd/$unit" "$UNIT_DIR/$unit"
 done
 
 systemctl --user daemon-reload
-systemctl --user enable --now hermes-backup.timer
-systemctl --user list-timers --all --no-pager | grep -E 'hermes-backup' || true
+systemctl --user enable --now hermes-backup.timer hermes-gbrain-git-backup.timer
+systemctl --user list-timers --all --no-pager | grep -E 'hermes-backup|hermes-gbrain-git-backup' || true

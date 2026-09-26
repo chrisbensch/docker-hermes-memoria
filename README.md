@@ -235,9 +235,12 @@ never replace `appdata/` without a verified timestamped copy or Restic snapshot.
 
 Backups use Restic credentials stored outside this checkout. The daily job
 backs up Hermes, GBrain Postgres and its configuration/credentials, Headroom,
-Firecrawl Postgres, and deployment config. GBrain credential archives are
-included inside encrypted Restic snapshots and must be protected like the
-profile `.env` files.
+Firecrawl Postgres, and deployment config. A second daily timer exports GBrain
+pages to the private `hermes-gbrain` GitHub repo after the Restic backup.
+GBrain credential archives are included inside encrypted Restic snapshots and
+must be protected like the profile `.env` files. Git backup covers Markdown
+pages and any raw-data sidecars returned by GBrain; Restic remains the full
+database and configuration recovery path.
 Install the user timer with:
 
 ```bash

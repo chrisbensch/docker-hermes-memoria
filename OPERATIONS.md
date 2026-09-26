@@ -964,6 +964,32 @@ By default, `scripts/backup-hermes-data.sh` reads
 set `HERMES_BACKUP_RESTIC_ENV` and `HERMES_BACKUP_STATE_ROOT` when invoking the
 script and carry those settings into the systemd services.
 
+### GBrain Git Export
+
+GBrain's `sync` command imports Git files into the database; it does not
+periodically export database changes back to Git. The separate
+`hermes-gbrain-git-backup.timer` exports all GBrain pages daily at 08:15 JST,
+after the 07:45 JST Restic backup. It writes the export under
+`database-export/` in the private `hermes-gbrain` repository, runs GBrain's
+secret scanner against the export and staged Git blobs, then commits and pushes
+only when the snapshot changes. It verifies the GitHub repo is private and the
+remote `main` commit matches local `HEAD` before declaring success.
+
+The Git export complements Restic. It contains GBrain's Markdown page export
+and any raw-data sidecars returned by GBrain; Restic remains the full recovery
+backup for Postgres, GBrain home/configuration, and credentials. Failed Git
+exports retain their owner-only plaintext staging directory for diagnosis;
+inspect and protect it like the Restic staging area.
+The timer uses the host's GitHub CLI authentication, so refresh it with
+`gh auth login` if the Git push begins failing. Check the source repository at
+`appdata/gbrain/shared/.gbrain/git-backup` and inspect the timer with:
+
+```bash
+systemctl --user list-timers --all | grep hermes-gbrain-git-backup
+systemctl --user status hermes-gbrain-git-backup.timer hermes-gbrain-git-backup.service
+journalctl --user -u hermes-gbrain-git-backup.service -n 200 --no-pager
+```
+
 ### List Snapshots And Sizes
 
 ```bash
@@ -1001,8 +1027,8 @@ removing them.
 
 ### User Timers And Logs
 
-The supplied timer runs the daily logical backup at 07:45 JST. Enable linger
-once, then install it:
+The supplied timers run the daily logical backup at 07:45 JST and the GBrain
+Git export at 08:15 JST. Enable linger once, then install them:
 
 The checked-in service units target the validated checkout at
 `/home/sysadmin/docker-hermes-memoria` and rootless socket
@@ -1018,9 +1044,10 @@ sudo loginctl enable-linger "$USER"
 Inspect scheduling, status, and logs:
 
 ```bash
-systemctl --user list-timers --all | grep hermes-backup
-systemctl --user status hermes-backup.timer hermes-backup.service
+systemctl --user list-timers --all | grep -E 'hermes-backup|hermes-gbrain-git-backup'
+systemctl --user status hermes-backup.timer hermes-backup.service hermes-gbrain-git-backup.timer hermes-gbrain-git-backup.service
 journalctl --user -u hermes-backup.service -n 200 --no-pager
+journalctl --user -u hermes-gbrain-git-backup.service -n 200 --no-pager
 ```
 
 The installer disables and removes the obsolete weekly Hindsight timer from

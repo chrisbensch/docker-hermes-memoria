@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the private GBrain Git export after the Restic backup
+
+[Timer]
+OnCalendar=*-*-* 08:15:00 Asia/Tokyo
+Persistent=true
+Unit=hermes-gbrain-git-backup.service
+
+[Install]
+WantedBy=timers.target
