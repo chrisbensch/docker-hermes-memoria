@@ -354,11 +354,6 @@ activate_profile() {
     return 0
   fi
   printf '%s\n' "$active_profile" > "$data_dir/active_profile"
-  timestamp_value=$(date +%s 2>/dev/null || printf '0')
-  printf '{"gateway_state":"stopped","desired_state":"stopped","timestamp":%s,"kind":"hermes-gateway"}\n' "$timestamp_value" > "$data_dir/gateway_state.json"
-  if [ -d "$data_dir/profiles/$active_profile" ]; then
-    printf '{"gateway_state":"running","desired_state":"running","timestamp":%s,"kind":"hermes-gateway"}\n' "$timestamp_value" > "$data_dir/profiles/$active_profile/gateway_state.json"
-  fi
 }
 
 normalize_vault_permissions() {

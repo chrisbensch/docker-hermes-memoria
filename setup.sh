@@ -890,6 +890,10 @@ printf 'Validate the Compose file:\n'
 printf '  %s config\n\n' "$compose_cmd"
 printf 'Bring the stack up:\n'
 printf '  %s up -d\n\n' "$compose_cmd"
+printf 'Review the Telegram multi-profile gateway migration plan after the stack is healthy:\n'
+printf '  ./scripts/migrate-telegram-gateway.sh --dry-run\n'
+printf 'Apply it after reviewing the plan (a verified config backup is created first):\n'
+printf '  ./scripts/migrate-telegram-gateway.sh --apply\n\n'
 printf 'Normalize rootless appdata permissions after the containers create their state:\n'
 printf '  ./scripts/normalize-appdata-permissions.sh\n\n'
 printf 'Initialize the Hindsight bank after the stack is healthy:\n'

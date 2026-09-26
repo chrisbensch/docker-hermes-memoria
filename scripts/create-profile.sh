@@ -196,15 +196,6 @@ ensure_obsidian_vault_in_container() {
   ' sh "$container_obsidian_vault_dir" "$profile"
 }
 
-write_gateway_state() {
-  state_file=$1
-  gateway_state=$2
-  desired_state=$3
-  timestamp=$(date +%s 2>/dev/null || printf '0')
-  printf '{"gateway_state":"%s","desired_state":"%s","timestamp":%s,"kind":"hermes-gateway"}\n' \
-    "$gateway_state" "$desired_state" "$timestamp" > "$state_file"
-}
-
 init_hindsight_bank() {
   bank_url="$hindsight_api_base/v1/default/banks/$bank_id"
   if ! command -v curl >/dev/null 2>&1; then
@@ -245,8 +236,6 @@ print_summary() {
 
 activate_profile() {
   printf '%s\n' "$profile_name" > "$active_profile_file"
-  write_gateway_state "$data_dir/gateway_state.json" stopped stopped
-  write_gateway_state "$profile_dir/gateway_state.json" running running
 }
 
 create_profile_in_container() {
@@ -298,17 +287,11 @@ create_profile_in_container() {
   ensure_obsidian_vault_in_container "$container" "$profile_name"
 
   activate_profile_in_container() {
-    timestamp=$(date +%s 2>/dev/null || printf '0')
     docker exec "$container" sh -c '
       profile=$1
       active_file=$2
-      base_state_file=$3
-      profile_state_file=$4
-      timestamp=$5
       printf "%s\n" "$profile" > "$active_file"
-      printf "{\"gateway_state\":\"%s\",\"desired_state\":\"%s\",\"timestamp\":%s,\"kind\":\"hermes-gateway\"}\n" stopped stopped "$timestamp" > "$base_state_file"
-      printf "{\"gateway_state\":\"%s\",\"desired_state\":\"%s\",\"timestamp\":%s,\"kind\":\"hermes-gateway\"}\n" running running "$timestamp" > "$profile_state_file"
-    ' sh "$profile_name" "$container_active_profile_file" "$container_data_dir/gateway_state.json" "$container_profile_dir/gateway_state.json" "$timestamp"
+    ' sh "$profile_name" "$container_active_profile_file"
   }
 
   case "$activate_profile" in

@@ -57,6 +57,15 @@ ports, container IPs, or generated container names. For example, Hermes uses
 `http://hindsight-mcp:8888`, `http://firecrawl-api:3002`, and
 `http://camofox:9377`.
 
+Hermes runs one default gateway process for the deployment. With profile
+multiplexing enabled, that process serves the named profiles while keeping each
+profile's Telegram bot token and conversation state separate. The current
+deployment serves 13 named profiles, with eight Telegram adapters connected.
+Telegram bots must use unique tokens; the initial rollout keeps each profile's
+existing bot and token rather than combining profiles behind one bot. See the
+[Telegram gateway migration](OPERATIONS.md#telegram-gateway-migration) before
+changing an existing deployment.
+
 ## Local State And Configuration
 
 Tracked files are templates and automation. Runtime state and generated local

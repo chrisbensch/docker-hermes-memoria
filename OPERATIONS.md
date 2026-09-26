@@ -90,6 +90,100 @@ docker compose --env-file .env ps headroom-mcp
 Do not replace the stdio transport with the proxy URL. See the Headroom MCP
 procedure below for the canonical profile-aware test.
 
+## Telegram Gateway Migration
+
+The stack runs one default gateway process. Hermes v0.21.5 multiplexes enabled
+platforms for named profiles through that process; each profile keeps its own
+Telegram bot credentials and profile state. Use one unique bot token per
+Telegram-enabled profile. The initial rollout preserves the existing
+profile-to-bot mapping and does not move profiles onto a shared bot.
+
+### Back Up And Preview
+
+First confirm the image version and profile inventory. Back up the complete
+Hermes state with the daily logical backup before changing gateway topology:
+
+```bash
+docker compose --env-file .env exec -T hermes hermes --version
+docker compose --env-file .env exec -T hermes hermes profile list
+./scripts/backup-hermes-data.sh --mode daily
+```
+
+Confirm that the backup completed and note its snapshot ID. The Restic
+environment loading procedure is documented in [Restic Backups](#restic-backups).
+
+The deployment uses Hermes v0.21.5 (2026.9.24). Keep the Hermes image pinned
+to the validated release while migrating. Preview the change with the helper;
+its default mode is read-only and reports blockers or other prerequisites:
+
+```bash
+./scripts/migrate-telegram-gateway.sh
+```
+
+If the preview says the default gateway is already multiplexing all expected
+profiles, no apply step is needed. Otherwise, resolve any reported blockers
+before applying. Confirm that every Telegram
+profile has its intended, unique bot token in its existing profile
+configuration. Keep those credentials in the ignored Hermes runtime state;
+never paste tokens into tracked files or support output.
+
+### Apply And Validate
+
+Apply through the helper. It creates and verifies a timestamped archive of
+Hermes configs and profile environment files under
+`/opt/data/migration-backups/` before invoking Hermes migration:
+
+```bash
+./scripts/migrate-telegram-gateway.sh --apply
+```
+
+The command stops and removes the secondary standalone gateways, enables
+multiplexing in the default profile, and starts the default gateway. In this
+Compose deployment, leave the `hermes` service running; do not start an
+additional gateway for each named profile.
+
+Confirm that there is one default gateway PID and that it serves all expected
+named profiles. This deployment has 13 named profiles and eight configured
+Telegram adapters currently connected; `gateway list` should show the 13
+served profiles:
+
+```bash
+docker compose --env-file .env exec -T hermes hermes gateway list
+docker compose --env-file .env logs --tail=200 hermes
+```
+
+Then send a test message to each Telegram bot and confirm that each reply comes
+from its intended profile. Check Hermes logs for polling/authentication errors
+and verify profile-specific behavior or memory in at least one conversation per
+profile. Do not treat a running process alone as proof that all bots connected.
+
+### Roll Back
+
+There is no reverse `gateway migrate` command. Hermes records a migration
+manifest for recovery if apply fails partway through, and rerunning the apply
+command resumes that migration. For a completed migration that fails
+validation, restore the pre-migration Hermes state from the verified daily
+snapshot using [Applying a Daily Snapshot](#applying-a-daily-snapshot). Stop
+the Hermes service before restoring, and preserve a separate timestamped copy
+of current `appdata/hermes` first:
+
+```bash
+docker compose --env-file .env stop hermes
+stamp=$(date +%Y%m%dT%H%M%S)
+mkdir -p "migration-backups/telegram-current-$stamp"
+cp -a appdata/hermes "migration-backups/telegram-current-$stamp/"
+diff -qr appdata/hermes "migration-backups/telegram-current-$stamp/hermes"
+```
+
+A restore replaces runtime state, so messages and state created after the
+snapshot will not be present after rollback.
+
+Restore the matching pre-migration image as well as its runtime state when
+rolling back an image upgrade. After restoring, start the stack and run
+`hermes gateway list` again. Validate each Telegram bot before resuming normal
+use. Keep the pre-migration snapshot until the multiplexed gateway and all
+profile bots pass validation.
+
 ## Image Version Updates
 
 Hindsight and Headroom are explicitly pinned because they persist data or sit

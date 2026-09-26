@@ -16,6 +16,10 @@
 # here while each named profile owns its Hindsight/Headroom config.
 mcp_servers: {}
 
+# Run one default-profile gateway for all named profiles on this host.
+gateway:
+  multiplex_profiles: true
+
 # Hermes requires an enabled authentication provider before Dashboard/Desktop
 # can bind to a non-loopback address. The provider stays inactive until basic
 # auth credentials are configured by setup.sh or set-dashboard-password.sh.

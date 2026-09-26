@@ -106,11 +106,11 @@ automatically.
 If the socket check fails, start rootless Docker for this user or set
 `DOCKER_SOCK` to the actual socket before continuing.
 
-2. Create the profile. The first profile created becomes the active
-Hermes profile by writing `appdata/hermes/active_profile` and seeding gateway state
-so the first container start runs that profile; do not create a profile named
-`default`. This command uses the optional bundled `research` example; replace
-it with your own profile name as needed.
+2. Create the profile. The first profile created becomes the active CLI and
+Dashboard selection through `appdata/hermes/active_profile`. The default gateway
+serves it after startup; do not create a profile named `default`. This command
+uses the optional bundled `research` example; replace it with your own profile
+name as needed.
 
 ```bash
 chmod +x scripts/create-profile.sh scripts/create-profile-rootless.sh
@@ -119,6 +119,12 @@ chmod +x scripts/create-profile.sh scripts/create-profile-rootless.sh
 
 If Hindsight is already running, the script also creates the matching bank. If
 not, it prints the curl command to retry after startup.
+
+The stack uses one default Hermes gateway process. If Telegram is enabled for
+multiple profiles, configure a different bot token for each profile; the
+gateway routes each bot to its matching profile. Do not copy one bot token into
+multiple profiles. For an existing deployment with profile gateways, follow
+the backed-up migration in [OPERATIONS.md](OPERATIONS.md#telegram-gateway-migration).
 
 Hindsight and Hermes use separate model settings. To run Hermes Agent itself
 through LM Studio, set `LM_BASE_URL` in `appdata/hermes/.env`, then add a runtime
