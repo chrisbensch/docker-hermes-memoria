@@ -142,10 +142,8 @@ multiplexing in the default profile, and starts the default gateway. In this
 Compose deployment, leave the `hermes` service running; do not start an
 additional gateway for each named profile.
 
-Confirm that there is one default gateway PID and that it serves all expected
-named profiles. This deployment has 13 named profiles and eight configured
-Telegram adapters currently connected; `gateway list` should show the 13
-served profiles:
+Confirm that there is one default gateway PID and that it serves every named
+profile in the inventory. Check that each configured Telegram adapter connects:
 
 ```bash
 docker compose --env-file .env exec -T hermes hermes gateway list

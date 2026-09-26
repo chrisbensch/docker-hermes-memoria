@@ -36,6 +36,7 @@ docker compose --env-file .env config --quiet
 docker compose --env-file .env up -d
 docker compose --env-file .env ps
 bash tests/test_backup_scripts.sh
+bash tests/test_telegram_gateway_lifecycle.sh
 python3 -m unittest discover -s tests -v
 bash -n scripts/*.sh setup.sh reset.sh
 git diff --check
@@ -51,6 +52,13 @@ profile and bank, and `./scripts/install-backup-timers.sh` for systemd user
 timers. Migration work starts with
 `scripts/collect-host-migration-inventory.sh`, then uses
 `scripts/migrate-host-hermes-data.sh --dry-run` before applying changes.
+
+Hermes v0.21.5 uses one default-profile gateway process to serve all named
+profiles. `active_profile` selects the CLI/Dashboard profile; it does not own a
+gateway process. Keep Telegram bot tokens unique to their named profiles, and
+use `scripts/migrate-telegram-gateway.sh` in dry-run mode before any gateway
+migration. Do not write per-profile `gateway_state.json` files or start a
+second profile gateway.
 
 Headroom MCP is intentionally launched on demand over stdio in the sleeping
 `hermes-headroom-mcp` container. The rootless Docker socket is already mounted

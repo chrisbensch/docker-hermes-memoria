@@ -2,6 +2,11 @@
 
 This profile is scaffolded for the compose-managed rootless Hermes stack.
 
+The default Hermes gateway serves this profile alongside other named profiles.
+If this profile uses Telegram, keep its unique bot token in this profile's
+private `.env` file. Do not start a separate gateway for this profile or copy
+another profile's bot token.
+
 ## Memory Wiring
 
 - Hermes built-in memory stays profile-local in this directory.

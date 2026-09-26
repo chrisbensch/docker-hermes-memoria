@@ -59,8 +59,7 @@ ports, container IPs, or generated container names. For example, Hermes uses
 
 Hermes runs one default gateway process for the deployment. With profile
 multiplexing enabled, that process serves the named profiles while keeping each
-profile's Telegram bot token and conversation state separate. The current
-deployment serves 13 named profiles, with eight Telegram adapters connected.
+profile's Telegram bot token and conversation state separate.
 Telegram bots must use unique tokens; the initial rollout keeps each profile's
 existing bot and token rather than combining profiles behind one bot. See the
 [Telegram gateway migration](OPERATIONS.md#telegram-gateway-migration) before

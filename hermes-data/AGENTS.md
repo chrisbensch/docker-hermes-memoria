@@ -5,6 +5,9 @@
 - Keep work within the active profile. Do not mix profile-specific memories,
   files, or Hindsight banks unless the user explicitly requests cross-profile
   work.
+- One default gateway serves all profiles. `active_profile` selects the CLI and
+  Dashboard profile; it does not select a gateway process. Keep each Telegram
+  bot token in its own profile and do not start a separate profile gateway.
 - Use memory deliberately: native memory for compact stable facts, session
   search for prior transcripts, Hindsight for deeper semantic knowledge, and
   the shared Obsidian vault for durable human-readable notes. Headroom is for
