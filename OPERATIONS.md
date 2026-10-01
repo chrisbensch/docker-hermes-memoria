@@ -5,8 +5,9 @@ Run commands from the repository root as the same unprivileged account that
 runs rootless Docker. See `QUICKSTART.md` for first-time setup and `README.md`
 for architecture and configuration details.
 
-The deployment no longer runs a local Hindsight service; GBrain is the semantic
-memory service. Older Hindsight-specific procedures later in this file are
+The deployment no longer runs a local Hindsight service; GBrain holds
+source-backed knowledge and Honcho holds relationship memory for Maestro.
+Older Hindsight-specific procedures later in this file are
 retained only for legacy deployments and do not apply to the current Compose
 stack.
 
@@ -70,6 +71,7 @@ Inspect all logs or focus on one service:
 docker compose --env-file .env logs --tail=200
 docker compose --env-file .env logs --tail=200 hermes
 docker compose --env-file .env logs -f firecrawl-api
+docker compose --env-file .env logs --tail=100 honcho-api honcho-deriver
 ```
 
 Test the host-published sidecar endpoints:
@@ -92,6 +94,15 @@ docker compose --env-file .env ps headroom-mcp
 
 Do not replace the stdio transport with the proxy URL. See the Headroom MCP
 procedure below for the canonical profile-aware test.
+
+Honcho has no host-published endpoint. Check its health and the Maestro
+provider from the Compose network:
+
+```bash
+docker compose --env-file .env ps honcho-api honcho-deriver honcho-postgres honcho-redis
+docker compose --env-file .env exec -T hermes hermes -p maestro memory status
+docker compose --env-file .env exec -T hermes hermes -p maestro honcho status
+```
 
 ## Telegram Gateway Migration
 
@@ -921,9 +932,12 @@ network path works.
 The host-side wrapper stages container-readable exports, then Restic encrypts,
 deduplicates, uploads, and applies retention. Daily logical backups include
 Hermes data and online SQLite exports, the Memory Vault, Headroom, Firecrawl
-Postgres, GBrain Postgres, the Metabase application database when initialized,
-and deployment configuration. An initialized GBrain deployment also includes
-validated PostgreSQL, shared home/configuration, mounted service secrets, and
+Postgres, Honcho Postgres, GBrain Postgres, the Metabase application database
+when initialized, and deployment configuration. The Honcho archive is a
+PostgreSQL custom-format dump whose catalog is checked before Restic runs; if
+Honcho Postgres is stopped, the daily job fails rather than omitting it. An
+initialized GBrain deployment also includes validated PostgreSQL, shared
+home/configuration, mounted service secrets, and
 per-profile broker credentials. These credential archives are plaintext in the
 owner-only staging directory and encrypted by Restic; protect failed staging
 directories as secrets. If the GBrain database container exists but is stopped,
@@ -931,7 +945,8 @@ the daily job fails instead of silently omitting an initialized database. The
 Metabase archive preserves dashboards,
 questions, users, and settings; it does not duplicate GBrain content.
 Redis and RabbitMQ queue state, caches, logs, generated images, and generic
-temporary data are intentionally outside the durable scope. The former weekly
+temporary data are intentionally outside the durable scope, including Honcho
+Redis queue state. Its PostgreSQL data is the durable backup. The former weekly
 raw Hindsight checkpoint is retired.
 
 ### Load Configuration
@@ -1073,6 +1088,7 @@ directory:
 find "$restore_root" -name metadata.json -print
 find "$restore_root" -name hindsight-validation.json -print
 find "$restore_root" -name gbrain-postgres.dump.json -print
+find "$restore_root" -name honcho-postgres.dump -print
 find "$restore_root" -name metabase-postgres.dump.json -print
 ```
 
@@ -1087,6 +1103,23 @@ python3 scripts/validate-gbrain-postgres-backup.py \
   --backup /path/inside/restore-root/gbrain-postgres.dump \
   --report "$restore_root/gbrain-validation-recheck.json"
 ```
+
+For the Honcho archive, inspect the catalog with local PostgreSQL tools, or
+with the running Honcho PostgreSQL container if `pg_restore` is unavailable on
+the host:
+
+```bash
+pg_restore --list /path/inside/restore-root/honcho-postgres.dump >/dev/null
+# Or, after starting honcho-postgres in an isolated restore stack:
+docker compose --env-file .env exec -T honcho-postgres pg_restore --list \
+  < /path/inside/restore-root/honcho-postgres.dump >/dev/null
+```
+
+For an actual Honcho restore, use an isolated checkout and empty
+`appdata/honcho/postgres` bind mount. Start only `honcho-postgres`, check that
+the target `honcho` database has no user tables, and restore the archive before
+starting `honcho-api` or `honcho-deriver`. Preserve a verified snapshot of any
+existing destination first; do not import into an initialized Honcho database.
 
 The GBrain validator checks the archive checksum, metadata, and PostgreSQL
 archive catalog without connecting to a database. For a restore drill, start a
@@ -1142,10 +1175,12 @@ legacy payload procedures below do not apply to the current stack.
 5. Restore each profile's online-exported SQLite `state.db` after its profile
    directory exists.
 6. Restore Headroom and Firecrawl Postgres.
-7. Restore GBrain Postgres from its validated archive when present, then start
+7. Restore Honcho Postgres from its checked archive into an empty database,
+   then start its API and deriver.
+8. Restore GBrain Postgres from its validated archive when present, then start
    the GBrain API and broker.
-8. Validate profiles, GBrain MCP, active profile, vault, cron, integrated URLs,
-   and service health before enabling external access.
+9. Validate profiles, Honcho memory, GBrain MCP, active profile, vault, cron,
+   integrated URLs, and service health before enabling external access.
 
 ### Applying A Daily Snapshot
 
@@ -1233,6 +1268,25 @@ Because the complete appdata tree was moved aside, Firecrawl initializes a
 fresh target database before this import. If PostgreSQL reports existing-object
 collisions, stop: the target is not empty, and dropping objects in place is not
 an acceptable shortcut.
+
+Restore Honcho only into the fresh PostgreSQL database, before starting its API
+or deriver. The following commands refuse a target that contains user tables:
+
+```bash
+mkdir -p "$appdata_host/honcho/postgres" "$appdata_host/honcho/redis"
+docker compose --env-file .env up -d honcho-postgres
+test -s "$payload/honcho-postgres.dump"
+docker compose --env-file .env exec -T honcho-postgres pg_restore --list \
+  < "$payload/honcho-postgres.dump" >/dev/null
+table_count=$(docker compose --env-file .env exec -T honcho-postgres psql \
+  --username=honcho --dbname=honcho --tuples-only --no-align \
+  --command="SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind IN ('r','p') AND n.nspname NOT IN ('pg_catalog','information_schema');")
+test "$table_count" = 0
+docker compose --env-file .env exec -T honcho-postgres pg_restore \
+  --exit-on-error --no-owner --no-privileges --username=honcho --dbname=honcho \
+  < "$payload/honcho-postgres.dump"
+docker compose --env-file .env up -d honcho-api honcho-deriver
+```
 
 ### Legacy Hindsight Import
 

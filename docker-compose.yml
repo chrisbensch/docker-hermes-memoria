@@ -9,6 +9,8 @@ services:
         condition: service_started
       firecrawl-api:
         condition: service_started
+      honcho-api:
+        condition: service_healthy
     volumes:
       - ${APPDATA_DIR:-./appdata}/hermes:/opt/data
       # Hermes discovers the top-level AGENTS.md from its working directory.
@@ -24,6 +26,9 @@ services:
         target: /var/run/docker.sock
         bind:
           create_host_path: false
+    networks:
+      - default
+      - honcho-app
     ports:
       # Only useful when you enable Hermes' API server with API_SERVER_KEY or
       # API_SERVER_ENABLED. The API server defaults to container port 8642.
@@ -266,6 +271,176 @@ services:
         max-size: "5m"
         max-file: "3"
 
+  # Self-hosted Honcho relationship memory. Its API, deriver, PostgreSQL, and
+  # Redis are part of the base stack. Postgres and Redis are separate
+  # from GBrain, and the API has no published host port.
+  honcho-postgres:
+    image: ${HONCHO_POSTGRES_IMAGE:-pgvector/pgvector:pg15}
+    environment:
+      POSTGRES_USER: honcho
+      POSTGRES_DB: honcho
+      POSTGRES_PASSWORD: ${HONCHO_POSTGRES_PASSWORD:-}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - type: bind
+        source: ${APPDATA_DIR:-./appdata}/honcho/postgres
+        target: /var/lib/postgresql/data
+        bind:
+          create_host_path: false
+    networks:
+      - honcho-db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U honcho -d honcho"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  honcho-api:
+    image: ${HONCHO_IMAGE:-ghcr.io/plastic-labs/honcho:v3.2.2@sha256:67f386b9860ace4be1460094556282c61365f8ea773815095e987d805762c40e}
+    entrypoint: ["sh", "docker/entrypoint.sh"]
+    depends_on:
+      honcho-postgres:
+        condition: service_healthy
+      honcho-redis:
+        condition: service_healthy
+    environment:
+      DB_CONNECTION_URI: postgresql+psycopg://honcho:${HONCHO_POSTGRES_PASSWORD:-}@honcho-postgres:5432/honcho
+      CACHE_URL: redis://honcho-redis:6379/0?suppress=true
+      CACHE_ENABLED: "true"
+      AUTH_USE_AUTH: "false"
+      LLM_OPENAI_API_KEY: ${HONCHO_LLM_OPENAI_API_KEY:-}
+      EMBEDDING_VECTOR_DIMENSIONS: ${HONCHO_EMBEDDING_VECTOR_DIMENSIONS:-1536}
+      EMBEDDING_MODEL_CONFIG__MODEL: ${HONCHO_EMBEDDING_MODEL:-text-embedding-3-small}
+      EMBEDDING_MODEL_CONFIG__OVERRIDES__BASE_URL: ${HONCHO_EMBEDDING_BASE_URL:-}
+      EMBEDDING_MODEL_CONFIG__DIMENSIONS_MODE: ${HONCHO_EMBEDDING_DIMENSIONS_MODE:-auto}
+      DERIVER_MODEL_CONFIG__MODEL: ${HONCHO_LLM_MODEL:-gpt-6-luna}
+      DERIVER_MODEL_CONFIG__OVERRIDES__BASE_URL: ${HONCHO_LLM_OPENAI_BASE_URL:-}
+      DERIVER_MODEL_CONFIG__THINKING_EFFORT: ${HONCHO_LLM_THINKING_EFFORT:-none}
+      SUMMARY_MODEL_CONFIG__MODEL: ${HONCHO_LLM_MODEL:-gpt-6-luna}
+      SUMMARY_MODEL_CONFIG__OVERRIDES__BASE_URL: ${HONCHO_LLM_OPENAI_BASE_URL:-}
+      SUMMARY_MODEL_CONFIG__THINKING_EFFORT: ${HONCHO_LLM_THINKING_EFFORT:-none}
+      DIALECTIC_LEVELS__minimal__MODEL_CONFIG__MODEL: ${HONCHO_LLM_MODEL:-gpt-6-luna}
+      DIALECTIC_LEVELS__minimal__MODEL_CONFIG__OVERRIDES__BASE_URL: ${HONCHO_LLM_OPENAI_BASE_URL:-}
+      DIALECTIC_LEVELS__minimal__MODEL_CONFIG__THINKING_EFFORT: ${HONCHO_LLM_THINKING_EFFORT:-none}
+      DIALECTIC_LEVELS__low__MODEL_CONFIG__MODEL: ${HONCHO_LLM_MODEL:-gpt-6-luna}
+      DIALECTIC_LEVELS__low__MODEL_CONFIG__OVERRIDES__BASE_URL: ${HONCHO_LLM_OPENAI_BASE_URL:-}
+      DIALECTIC_LEVELS__low__MODEL_CONFIG__THINKING_EFFORT: ${HONCHO_LLM_THINKING_EFFORT:-none}
+      DIALECTIC_LEVELS__medium__MODEL_CONFIG__MODEL: ${HONCHO_LLM_MODEL:-gpt-6-luna}
+      DIALECTIC_LEVELS__medium__MODEL_CONFIG__OVERRIDES__BASE_URL: ${HONCHO_LLM_OPENAI_BASE_URL:-}
+      DIALECTIC_LEVELS__medium__MODEL_CONFIG__THINKING_EFFORT: ${HONCHO_LLM_THINKING_EFFORT:-none}
+      DIALECTIC_LEVELS__high__MODEL_CONFIG__MODEL: ${HONCHO_LLM_MODEL:-gpt-6-luna}
+      DIALECTIC_LEVELS__high__MODEL_CONFIG__OVERRIDES__BASE_URL: ${HONCHO_LLM_OPENAI_BASE_URL:-}
+      DIALECTIC_LEVELS__high__MODEL_CONFIG__THINKING_EFFORT: ${HONCHO_LLM_THINKING_EFFORT:-none}
+      DIALECTIC_LEVELS__max__MODEL_CONFIG__MODEL: ${HONCHO_LLM_MODEL:-gpt-6-luna}
+      DIALECTIC_LEVELS__max__MODEL_CONFIG__OVERRIDES__BASE_URL: ${HONCHO_LLM_OPENAI_BASE_URL:-}
+      DIALECTIC_LEVELS__max__MODEL_CONFIG__THINKING_EFFORT: ${HONCHO_LLM_THINKING_EFFORT:-none}
+      DREAM_DEDUCTION_MODEL_CONFIG__MODEL: ${HONCHO_LLM_MODEL:-gpt-6-luna}
+      DREAM_DEDUCTION_MODEL_CONFIG__OVERRIDES__BASE_URL: ${HONCHO_LLM_OPENAI_BASE_URL:-}
+      DREAM_DEDUCTION_MODEL_CONFIG__THINKING_EFFORT: ${HONCHO_LLM_THINKING_EFFORT:-none}
+      DREAM_INDUCTION_MODEL_CONFIG__MODEL: ${HONCHO_LLM_MODEL:-gpt-6-luna}
+      DREAM_INDUCTION_MODEL_CONFIG__OVERRIDES__BASE_URL: ${HONCHO_LLM_OPENAI_BASE_URL:-}
+      DREAM_INDUCTION_MODEL_CONFIG__THINKING_EFFORT: ${HONCHO_LLM_THINKING_EFFORT:-none}
+      LOG_LEVEL: ${HONCHO_LOG_LEVEL:-INFO}
+    networks:
+      - honcho-app
+      - honcho-db
+    healthcheck:
+      test: ["CMD", "/app/.venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  honcho-deriver:
+    image: ${HONCHO_IMAGE:-ghcr.io/plastic-labs/honcho:v3.2.2@sha256:67f386b9860ace4be1460094556282c61365f8ea773815095e987d805762c40e}
+    entrypoint: ["/app/.venv/bin/python", "-m", "src.deriver"]
+    depends_on:
+      honcho-api:
+        condition: service_healthy
+      honcho-postgres:
+        condition: service_healthy
+      honcho-redis:
+        condition: service_healthy
+    environment:
+      DB_CONNECTION_URI: postgresql+psycopg://honcho:${HONCHO_POSTGRES_PASSWORD:-}@honcho-postgres:5432/honcho
+      CACHE_URL: redis://honcho-redis:6379/0?suppress=true
+      CACHE_ENABLED: "true"
+      AUTH_USE_AUTH: "false"
+      LLM_OPENAI_API_KEY: ${HONCHO_LLM_OPENAI_API_KEY:-}
+      EMBEDDING_VECTOR_DIMENSIONS: ${HONCHO_EMBEDDING_VECTOR_DIMENSIONS:-1536}
+      EMBEDDING_MODEL_CONFIG__MODEL: ${HONCHO_EMBEDDING_MODEL:-text-embedding-3-small}
+      EMBEDDING_MODEL_CONFIG__OVERRIDES__BASE_URL: ${HONCHO_EMBEDDING_BASE_URL:-}
+      EMBEDDING_MODEL_CONFIG__DIMENSIONS_MODE: ${HONCHO_EMBEDDING_DIMENSIONS_MODE:-auto}
+      DERIVER_MODEL_CONFIG__MODEL: ${HONCHO_LLM_MODEL:-gpt-6-luna}
+      DERIVER_MODEL_CONFIG__OVERRIDES__BASE_URL: ${HONCHO_LLM_OPENAI_BASE_URL:-}
+      DERIVER_MODEL_CONFIG__THINKING_EFFORT: ${HONCHO_LLM_THINKING_EFFORT:-none}
+      SUMMARY_MODEL_CONFIG__MODEL: ${HONCHO_LLM_MODEL:-gpt-6-luna}
+      SUMMARY_MODEL_CONFIG__OVERRIDES__BASE_URL: ${HONCHO_LLM_OPENAI_BASE_URL:-}
+      SUMMARY_MODEL_CONFIG__THINKING_EFFORT: ${HONCHO_LLM_THINKING_EFFORT:-none}
+      DIALECTIC_LEVELS__minimal__MODEL_CONFIG__MODEL: ${HONCHO_LLM_MODEL:-gpt-6-luna}
+      DIALECTIC_LEVELS__minimal__MODEL_CONFIG__OVERRIDES__BASE_URL: ${HONCHO_LLM_OPENAI_BASE_URL:-}
+      DIALECTIC_LEVELS__minimal__MODEL_CONFIG__THINKING_EFFORT: ${HONCHO_LLM_THINKING_EFFORT:-none}
+      DIALECTIC_LEVELS__low__MODEL_CONFIG__MODEL: ${HONCHO_LLM_MODEL:-gpt-6-luna}
+      DIALECTIC_LEVELS__low__MODEL_CONFIG__OVERRIDES__BASE_URL: ${HONCHO_LLM_OPENAI_BASE_URL:-}
+      DIALECTIC_LEVELS__low__MODEL_CONFIG__THINKING_EFFORT: ${HONCHO_LLM_THINKING_EFFORT:-none}
+      DIALECTIC_LEVELS__medium__MODEL_CONFIG__MODEL: ${HONCHO_LLM_MODEL:-gpt-6-luna}
+      DIALECTIC_LEVELS__medium__MODEL_CONFIG__OVERRIDES__BASE_URL: ${HONCHO_LLM_OPENAI_BASE_URL:-}
+      DIALECTIC_LEVELS__medium__MODEL_CONFIG__THINKING_EFFORT: ${HONCHO_LLM_THINKING_EFFORT:-none}
+      DIALECTIC_LEVELS__high__MODEL_CONFIG__MODEL: ${HONCHO_LLM_MODEL:-gpt-6-luna}
+      DIALECTIC_LEVELS__high__MODEL_CONFIG__OVERRIDES__BASE_URL: ${HONCHO_LLM_OPENAI_BASE_URL:-}
+      DIALECTIC_LEVELS__high__MODEL_CONFIG__THINKING_EFFORT: ${HONCHO_LLM_THINKING_EFFORT:-none}
+      DIALECTIC_LEVELS__max__MODEL_CONFIG__MODEL: ${HONCHO_LLM_MODEL:-gpt-6-luna}
+      DIALECTIC_LEVELS__max__MODEL_CONFIG__OVERRIDES__BASE_URL: ${HONCHO_LLM_OPENAI_BASE_URL:-}
+      DIALECTIC_LEVELS__max__MODEL_CONFIG__THINKING_EFFORT: ${HONCHO_LLM_THINKING_EFFORT:-none}
+      DREAM_DEDUCTION_MODEL_CONFIG__MODEL: ${HONCHO_LLM_MODEL:-gpt-6-luna}
+      DREAM_DEDUCTION_MODEL_CONFIG__OVERRIDES__BASE_URL: ${HONCHO_LLM_OPENAI_BASE_URL:-}
+      DREAM_DEDUCTION_MODEL_CONFIG__THINKING_EFFORT: ${HONCHO_LLM_THINKING_EFFORT:-none}
+      DREAM_INDUCTION_MODEL_CONFIG__MODEL: ${HONCHO_LLM_MODEL:-gpt-6-luna}
+      DREAM_INDUCTION_MODEL_CONFIG__OVERRIDES__BASE_URL: ${HONCHO_LLM_OPENAI_BASE_URL:-}
+      DREAM_INDUCTION_MODEL_CONFIG__THINKING_EFFORT: ${HONCHO_LLM_THINKING_EFFORT:-none}
+      LOG_LEVEL: ${HONCHO_LOG_LEVEL:-INFO}
+    networks:
+      - honcho-app
+      - honcho-db
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+  honcho-redis:
+    image: ${HONCHO_REDIS_IMAGE:-redis:8.2}
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ${APPDATA_DIR:-./appdata}/honcho/redis:/data
+    networks:
+      - honcho-app
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
   # Optional LAN-facing analytics for GBrain. Metabase stores its own users,
   # dashboards, and questions in a separate database, and reaches GBrain only
   # through a least-privilege reader provisioned by setup.sh --gbrain-metabase.
@@ -476,4 +651,7 @@ networks:
   default:
     name: hermes-compose-mcp-rootless
   gbrain-db:
+    internal: true
+  honcho-app: {}
+  honcho-db:
     internal: true

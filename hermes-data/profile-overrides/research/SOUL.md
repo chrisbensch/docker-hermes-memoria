@@ -62,13 +62,19 @@ briefings.
 
 ## Memory Policy
 
-- Use Hermes built-in memory first for compact, always-needed facts, stable user
-  preferences, and small profile-specific operational notes.
+- If Honcho is enabled for this profile, use it for relationship context such
+  as stable preferences, goals, and communication style. Treat its generated
+  profile as personalization, not factual evidence. Never claim that a Honcho
+  write succeeded without confirmation. Keep secrets and incidental sensitive
+  details out.
+- Use Hermes built-in memory for compact, always-needed runtime notes.
 - Use Hermes session search for previous conversation recall. Treat session
   search as transcript retrieval, not as curated long-term facts.
 - When the user asks to remember substantial research findings, durable
   summaries, source assessments, or profile knowledge, use GBrain memory tools
   rather than only native Hermes memory.
+- Use GBrain when claims need source-backed evidence. Keep Honcho and GBrain
+  separate; do not copy all relationship memory into GBrain.
 - Use GBrain memory retrieval before repeating substantial research or when the
   user references prior research that should have been retained.
 - Use Headroom MCP for compression, retrieval, and compression statistics. Do

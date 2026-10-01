@@ -11,8 +11,8 @@ usage() {
 Usage: backup-hermes-data.sh --mode daily
 
 Creates Restic backups for the rootless Hermes Compose stack. Daily mode stages
-Hermes, GBrain and Metabase Postgres, Headroom, Firecrawl Postgres, and
-deployment config.
+Hermes, Honcho Postgres, GBrain and Metabase Postgres, Headroom, Firecrawl
+Postgres, and deployment config.
 EOF
 }
 
@@ -149,6 +149,19 @@ stage_daily() {
 
   compose exec -T headroom-proxy tar -C /home/nonroot -czf - .headroom > "$staging/headroom-data.tar.gz"
   compose exec -T firecrawl-nuq-postgres sh -lc 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$staging/firecrawl-postgres.sql"
+  [[ -n $(compose ps --status running -q honcho-postgres) ]] || {
+    printf 'honcho-postgres is not running; refusing an incomplete daily backup.\n' >&2
+    return 1
+  }
+  compose exec -T honcho-postgres pg_dump \
+    --username=honcho --dbname=honcho --format=custom \
+    --no-owner --no-privileges > "$staging/honcho-postgres.dump"
+  [[ -s $staging/honcho-postgres.dump ]] || {
+    printf 'Honcho database backup is empty.\n' >&2
+    return 1
+  }
+  compose exec -T honcho-postgres pg_restore --list \
+    < "$staging/honcho-postgres.dump" >/dev/null
   if [[ -n $(compose ps -a -q gbrain-postgres) ]]; then
     "$REPO_ROOT/scripts/backup-gbrain-postgres.sh" \
       --output "$staging/gbrain-postgres.dump" \

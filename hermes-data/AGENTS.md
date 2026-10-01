@@ -8,10 +8,12 @@
 - One default gateway serves all profiles. `active_profile` selects the CLI and
   Dashboard profile; it does not select a gateway process. Keep each Telegram
   bot token in its own profile and do not start a separate profile gateway.
-- Use memory deliberately: native memory for compact stable facts, session
-  search for prior transcripts, GBrain for deeper semantic knowledge, and
-  the shared Obsidian vault for durable human-readable notes. Headroom is for
-  context compression and retrieval, not durable memory.
+- Use memory deliberately: Honcho for relationship context when configured for
+  the active profile, session search for prior transcripts, GBrain for
+  source-backed knowledge, and the shared
+  Obsidian vault for durable human-readable notes. Keep secrets and incidental
+  sensitive details out of memory. Headroom is for context compression and
+  retrieval, not durable memory.
 - Prefer configured MCP and web tools over ad-hoc replacements. Headroom MCP
   is stdio-only; its proxy is not an MCP endpoint.
 - Treat configuration, services, credentials, repositories, and `appdata/` as

@@ -71,6 +71,12 @@ To clear generated state after a failed setup or manual experimentation, run:
 By default it archives old files under `reset-backups/` and leaves the repo ready
 for another `./setup.sh` run.
 
+Honcho's API, deriver, PostgreSQL, and Redis start with the base stack. Set
+`HONCHO_LLM_OPENAI_API_KEY` and the model and embedding endpoint values in the
+ignored `.env`; `./setup.sh` generates `HONCHO_POSTGRES_PASSWORD`. Hermes
+currently enables Honcho only for Maestro. See the
+[Honcho guide](docs/honcho-compose.md) for the provider setup.
+
 Headroom's MCP container and HTTP proxy/stats service start with the base stack.
 The MCP container normally sleeps until Hermes starts its stdio command; this
 is healthy and does not require another Docker socket or an HTTP MCP URL.
@@ -100,7 +106,7 @@ sed -i "s/^HERMES_UID=.*/HERMES_UID=$(id -u)/" .env
 sed -i "s/^HERMES_GID=.*/HERMES_GID=$(id -g)/" .env
 sed -i "s|^DOCKER_SOCK=.*|DOCKER_SOCK=/run/user/$(id -u)/docker.sock|" .env
 test -S "/run/user/$(id -u)/docker.sock"
-mkdir -p appdata/hermes/obsidian-memory-vault appdata/headroom appdata/firecrawl-redis appdata/firecrawl-rabbitmq appdata/firecrawl-postgres
+mkdir -p appdata/hermes/obsidian-memory-vault appdata/headroom appdata/firecrawl-redis appdata/firecrawl-rabbitmq appdata/firecrawl-postgres appdata/honcho/postgres appdata/honcho/redis
 cp hermes-data/.env.example appdata/hermes/.env
 cp -n hermes-data/config.rootless.yaml appdata/hermes/config.yaml
 cp -n hermes-data/AGENTS.md appdata/hermes/AGENTS.md
@@ -118,6 +124,8 @@ and `CAMOFOX_URL=http://camofox:9377` in `appdata/hermes/.env`. Also set
 automatically.
 If the socket check fails, start rootless Docker for this user or set
 `DOCKER_SOCK` to the actual socket before continuing.
+For a manual installation, also generate and set `HONCHO_POSTGRES_PASSWORD`
+in `.env` before `docker compose up -d`.
 
 2. Create the profile. The first profile created becomes the active CLI and
 Dashboard selection through `appdata/hermes/active_profile`. The default gateway

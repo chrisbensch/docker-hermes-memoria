@@ -10,15 +10,19 @@ another profile's bot token.
 ## Memory Wiring
 
 - Hermes built-in memory stays profile-local in this directory.
+- Honcho is the relationship-memory provider when enabled for this profile; it
+  can inject context and write conversation messages back.
 - GBrain provides shared semantic memory through its profile-scoped MCP broker.
 - Headroom MCP is configured in `config.yaml` as a Docker-backed stdio server
   that reacquires the rootless socket group with `sg hostdocker`.
 - Shared Obsidian vault inside Hermes: `__OBSIDIAN_VAULT_PATH__`
 - This profile's Obsidian index: `__OBSIDIAN_VAULT_PATH__/Profiles/__PROFILE__/Index.md`
 
-Use GBrain for shared semantic memory and retrieval. Use Headroom for
-compression, retrieval of compressed content, and compression statistics. Use
-Obsidian for durable notes, indexes, logs, and cross-profile knowledge.
+When enabled for this profile, use Honcho for durable user context and
+personalization. Use GBrain for source-backed knowledge and evidence. Keep
+these stores separate. Use Headroom for compression, retrieval of compressed
+content, and compression statistics. Use Obsidian for durable notes, indexes,
+logs, and cross-profile knowledge.
 
 ## Obsidian Vault
 

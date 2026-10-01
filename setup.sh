@@ -647,6 +647,9 @@ set_env_var "$env_file" APPDATA_DIR "$appdata_dir"
 # 0600 file when GBrain is initialized.
 set_env_var "$env_file" GBRAIN_EMBEDDING_API_KEY "$(get_env_value "$env_file" GBRAIN_EMBEDDING_API_KEY || true)"
 set_env_var "$env_file" GBRAIN_EMBEDDING_API_KEY_FILE "$(env_default "$env_file" GBRAIN_EMBEDDING_API_KEY_FILE ./appdata/gbrain/secrets/embedding-api-key.txt)"
+if env_missing_or_placeholder "$env_file" HONCHO_POSTGRES_PASSWORD; then
+  set_env_var "$env_file" HONCHO_POSTGRES_PASSWORD "$(generate_secret)"
+fi
 case "$appdata_dir" in
   /*) appdata_host_dir=$appdata_dir ;;
   *) appdata_host_dir="$script_dir/$appdata_dir" ;;
@@ -661,7 +664,9 @@ mkdir -p \
   "$appdata_host_dir/headroom" \
   "$appdata_host_dir/firecrawl-redis" \
   "$appdata_host_dir/firecrawl-rabbitmq" \
-  "$appdata_host_dir/firecrawl-postgres"
+  "$appdata_host_dir/firecrawl-postgres" \
+  "$appdata_host_dir/honcho/postgres" \
+  "$appdata_host_dir/honcho/redis"
 
 if [ ! -f "$hermes_env_file" ]; then
   cp "$hermes_env_example" "$hermes_env_file"

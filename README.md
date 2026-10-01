@@ -2,8 +2,8 @@
 
 This repository deploys Hermes Agent as a rootless Docker Compose stack. It
 includes isolated Hermes profiles, GBrain semantic memory, Headroom
-compression tools, and Firecrawl, SearXNG, and Camofox for web access. Hermes
-is not installed on the host.
+compression tools, Honcho relationship memory, and Firecrawl, SearXNG,
+and Camofox for web access. Hermes is not installed on the host.
 
 Start a new deployment with [QUICKSTART.md](QUICKSTART.md). Use
 [OPERATIONS.md](OPERATIONS.md) for health checks, authentication, migration,
@@ -13,6 +13,8 @@ backup, restore, and recovery procedures.
 
 - [QUICKSTART.md](QUICKSTART.md) — first deployment and service verification.
 - [OPERATIONS.md](OPERATIONS.md) — day-two operation and recovery runbook.
+- [docs/honcho-compose.md](docs/honcho-compose.md) — self-hosted
+  Honcho services and Hermes memory-provider setup.
 - [AGENTS.md](AGENTS.md) — repository conventions and safety requirements.
 - [`docs/superpowers/`](docs/superpowers/) — approved design and implementation
   records.
@@ -24,6 +26,7 @@ backup, restore, and recovery procedures.
 | Service | Purpose |
 | --- | --- |
 | `hermes` | Hermes gateway and supervised Dashboard in one container. |
+| `honcho-api`, `honcho-deriver`, `honcho-postgres`, `honcho-redis` | Self-hosted relationship memory in the base stack. Hermes uses it for Maestro. |
 | `headroom-proxy` | Headroom LLM proxy and statistics API. |
 | `headroom-mcp` | Intentionally sleeping container that runs Headroom MCP on demand over stdio. |
 | `firecrawl-api` and dependencies | Firecrawl extraction and search services. |
@@ -69,8 +72,8 @@ configuration stay outside Git:
   selects host bindings, images, the rootless Docker socket, and sidecar
   settings.
 - `appdata/` is ignored runtime state. It holds Hermes profiles, SQLite data,
-  the shared Obsidian vault, Headroom data, and Firecrawl
-  PostgreSQL data.
+  the shared Obsidian vault, Headroom data, Honcho PostgreSQL data, and
+  Firecrawl PostgreSQL data.
 - `appdata/hermes/.env` holds Hermes provider credentials and runtime variables.
   Keep provider keys here, not in tracked files.
 - `web-search/searxng-settings.yml` is generated from its tracked template with
@@ -107,13 +110,16 @@ Obsidian notes:  /opt/data/obsidian-memory-vault/Profiles/research/
 
 Use the memory layers for distinct jobs:
 
-1. Hermes built-in memory for hot facts and small operational notes.
+1. Honcho for durable relationship context and personalization. The service
+   starts with the base stack; Hermes currently enables it for Maestro only.
+   It can inject context and save conversation messages.
 2. Hermes session search for transcript recall.
-3. GBrain for shared semantic memory and knowledge retrieval.
+3. GBrain for source-backed knowledge and evidence.
 4. The shared Obsidian vault for durable notes, indexes, logs, and
    cross-profile material.
 5. Headroom for compression, compressed-content retrieval, and statistics; it
    is not the durable memory store.
+6. Hermes built-in memory for compact runtime notes.
 
 ## Optional Shared GBrain
 
@@ -234,8 +240,9 @@ Follow the complete [host migration procedure](OPERATIONS.md#host-install-migrat
 never replace `appdata/` without a verified timestamped copy or Restic snapshot.
 
 Backups use Restic credentials stored outside this checkout. The daily job
-backs up Hermes, GBrain Postgres and its configuration/credentials, Headroom,
-Firecrawl Postgres, and deployment config. A second daily timer exports GBrain
+backs up Hermes, Honcho Postgres, GBrain Postgres and its
+configuration/credentials, Headroom, Firecrawl Postgres, and deployment config.
+A second daily timer exports GBrain
 pages to the private `hermes-gbrain` GitHub repo after the Restic backup.
 GBrain credential archives are included inside encrypted Restic snapshots and
 must be protected like the profile `.env` files. Git backup covers Markdown
