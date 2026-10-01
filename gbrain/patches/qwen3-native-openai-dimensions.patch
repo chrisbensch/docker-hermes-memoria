@@ -1,0 +1,14 @@
+diff --git a/src/core/ai/dims.ts b/src/core/ai/dims.ts
+--- a/src/core/ai/dims.ts
++++ b/src/core/ai/dims.ts
+@@ -207,4 +207,10 @@ export function dimsProviderOptions(
+     case 'native-openai': {
+       // text-embedding-3-* supports dimensions; text-embedding-ada-002 does not.
+       // OpenAI embeddings are symmetric — inputType ignored.
++      // The local OmniRoute Qwen3 deployment uses the native OpenAI adapter
++      // and accepts `dimensions` to return the configured vector width. Match
++      // the full model id so other Qwen providers keep their existing handling.
++      if (matchId === 'blm-omlx-embed/qwen3-embedding-4b-4bit-dwq') {
++        return { openai: { dimensions: dims } };
++      }
+       if (matchId.startsWith('text-embedding-3')) {

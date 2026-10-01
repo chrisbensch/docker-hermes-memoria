@@ -31,6 +31,14 @@ the existing pgvector columns and `HONCHO_EMBEDDING_DIMENSIONS_MODE=always`
 when the embedding provider must receive an explicit `dimensions` request.
 Verify the endpoint returns that many values before starting Honcho; changing
 the configured dimension alone does not migrate existing database columns.
+
+For the local OmniRoute deployment, Honcho uses
+`blm-omlx-embed/Qwen3-Embedding-4B-4bit-DWQ` with
+`HONCHO_EMBEDDING_VECTOR_DIMENSIONS=1536` and
+`HONCHO_EMBEDDING_DIMENSIONS_MODE=always`. GBrain uses the same model ID at
+1024 dimensions in its own database. Its image carries a narrow adapter patch
+for that request; see [the GBrain guide](gbrain-compose.md#omniroute-qwen3-embedding-model).
+
 GPT-6 Luna supports function calls through Chat
 Completions when `reasoning_effort` is `none`, so the stack sets that effort
 for Honcho's model tasks by default. Keep credentials private. The hex

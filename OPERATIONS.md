@@ -104,6 +104,32 @@ docker compose --env-file .env exec -T hermes hermes -p maestro memory status
 docker compose --env-file .env exec -T hermes hermes -p maestro honcho status
 ```
 
+### Memory acceptance after embedding changes
+
+An embedding endpoint returning the requested vector width does not prove that
+GBrain's adapter sends `dimensions`, that Honcho writes conversation messages,
+or that Maestro routes claims to the right store. Use a unique, harmless test
+marker and check each path:
+
+1. Test Maestro's GBrain broker with the profile-aware `mcp test gbrain`
+   command in [the GBrain guide](docs/gbrain-compose.md#per-profile-access).
+2. Create a temporary GBrain page with an inline citation to a real source.
+   Embed only that page, retrieve it, search using a paraphrase, and ask Maestro
+   to answer with the GBrain page and source citation.
+3. Send a test preference through Maestro. Verify its messages reached Honcho,
+   then ask for it in a new Maestro session. Honcho derives conclusions in the
+   background, so test that worker with a separate disposable workspace and
+   check its queue, conclusions, and peer representation.
+4. Re-read both canaries after restarting the application containers. Check
+   Honcho's current Alembic revision against its head before restarting its
+   API, whose entrypoint initializes the database on startup.
+5. Remove the temporary records through each application's APIs. Export and
+   verify a timestamped copy of any Hermes test session before deleting it.
+
+This checks new embeddings and memory flow. Existing GBrain vectors from a
+different model still need separate retrieval evaluation and any authorized
+re-embedding work.
+
 ## Telegram Gateway Migration
 
 The stack runs one default gateway process. Hermes v0.21.5 multiplexes enabled

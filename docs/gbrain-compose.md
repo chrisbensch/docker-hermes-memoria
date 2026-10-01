@@ -9,6 +9,10 @@ recreating Hermes.
 The source is pinned to GBrain commit
 `31f257a0a7b218b40e03d302bc6913c99f26f0ec` (release `v0.54.1.1`). Change the
 pin only after reviewing and testing another full commit SHA.
+The image applies `gbrain/patches/qwen3-native-openai-dimensions.patch` to that
+checkout before installing dependencies. The build fails if the patch no
+longer applies. Review the patch whenever the upstream pin or OmniRoute model
+ID changes.
 
 ## Architecture and boundaries
 
@@ -177,6 +181,25 @@ docker compose --env-file .env --profile gbrain logs --tail=100 \
 The GBrain health probe is `http://gbrain:3131/health` from the application
 network. The upstream MCP endpoint is `http://gbrain:3131/mcp`; a profile named
 `maestro` uses only `http://gbrain-mcp:3132/mcp/maestro`.
+
+### OmniRoute Qwen3 embedding model
+
+The local deployment uses the exact OmniRoute model ID
+`blm-omlx-embed/Qwen3-Embedding-4B-4bit-DWQ`. Set
+`GBRAIN_EMBEDDING_MODEL` to that full ID and keep
+`GBRAIN_EMBEDDING_DIMENSIONS=1024` for the existing GBrain vector columns.
+The Compose entrypoint selects GBrain's `openai:` adapter. The tracked patch
+makes that adapter send `dimensions: 1024` for this model; the full model ID
+still goes to OmniRoute. A direct `/v1/embeddings` request that supplies
+`dimensions` does not verify GBrain's adapter, so check a real GBrain embed
+after rebuilding the image.
+
+Honcho can use the same model ID while requesting 1536 dimensions in its
+separate store; see [the Honcho guide](honcho-compose.md). Keep both database
+column widths as configured. New embeddings using a different model do not
+make older vectors semantically compatible; review re-embedding separately
+before treating older GBrain search results as validated. Do not run a
+database migration as part of rebuilding this image.
 
 To view the admin dashboard from a trusted LAN, set these private `.env`
 values to the host's LAN address and restart GBrain:

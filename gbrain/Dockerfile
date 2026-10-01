@@ -7,7 +7,13 @@ RUN apk add --no-cache git \
   && git clone https://github.com/garrytan/gbrain.git /opt/gbrain \
   && cd /opt/gbrain \
   && git checkout --detach "$GBRAIN_REF" \
-  && test "$(git rev-parse HEAD)" = "$GBRAIN_REF" \
+  && test "$(git rev-parse HEAD)" = "$GBRAIN_REF"
+
+COPY patches/qwen3-native-openai-dimensions.patch /tmp/qwen3-native-openai-dimensions.patch
+RUN cd /opt/gbrain \
+  && git apply --check /tmp/qwen3-native-openai-dimensions.patch \
+  && git apply /tmp/qwen3-native-openai-dimensions.patch \
+  && rm /tmp/qwen3-native-openai-dimensions.patch \
   && bun install --frozen-lockfile --production
 
 COPY entrypoint.sh /usr/local/bin/gbrain
